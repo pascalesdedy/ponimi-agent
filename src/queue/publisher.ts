@@ -12,6 +12,7 @@ export interface QueuedJob {
   ticketId: string;
   mode: "manual" | "semi-autonomous" | "autonomous";
   targetUrl?: string;
+  description?: string;
   submittedAt: string;
 }
 
@@ -22,7 +23,8 @@ export interface QueuedJob {
 export async function enqueueJob(
   ticketId: string,
   mode: "manual" | "semi-autonomous" | "autonomous" = "autonomous",
-  targetUrl?: string
+  targetUrl?: string,
+  description?: string
 ): Promise<string> {
   const job = await qaQueue.add(
     "qa-run",
@@ -30,6 +32,7 @@ export async function enqueueJob(
       ticketId,
       mode,
       targetUrl: targetUrl || "",
+      description: description || "",
       submittedAt: new Date().toISOString(),
     } satisfies QueuedJob,
     {

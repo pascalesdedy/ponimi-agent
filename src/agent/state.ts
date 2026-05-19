@@ -35,6 +35,9 @@ export const AgentStateAnnotation = Annotation.Root({
   // Target URL for test execution (e.g. https://staging.example.com)
   targetUrl: Annotation<string>(),
 
+  // Deskripsi langsung dari user (e.g. "Test login page with Google SSO")
+  description: Annotation<string>(),
+
   // Progres langkah saat ini (digunakan untuk UX/CLI Spinner)
   currentStep: Annotation<string>(),
 

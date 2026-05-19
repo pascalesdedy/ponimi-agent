@@ -13,6 +13,7 @@ interface QueuedJob {
   ticketId: string;
   mode: "manual" | "semi-autonomous" | "autonomous";
   targetUrl?: string;
+  description?: string;
   submittedAt: string;
 }
 
@@ -21,7 +22,7 @@ interface QueuedJob {
  * Wrapped in try/catch so BullMQ always gets a resolve or reject.
  */
 async function processRun(job: Job<QueuedJob>): Promise<Record<string, unknown>> {
-  const { ticketId, mode, targetUrl } = job.data;
+  const { ticketId, mode, targetUrl, description } = job.data;
   const threadId = `thread-${ticketId}`;
   const config = { configurable: { thread_id: threadId } };
 
@@ -34,6 +35,7 @@ async function processRun(job: Job<QueuedJob>): Promise<Record<string, unknown>>
   const initialState = {
     ticketData: ticketId,
     targetUrl: targetUrl || "",
+    description: description || "",
     mode,
     retryCount: 0,
     currentStep: "🚀 Worker: Starting...",

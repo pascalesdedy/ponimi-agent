@@ -11,6 +11,7 @@ export const extractRequirements = async (
 ): Promise<Partial<AgentState>> => {
   const ticketId = state.ticketData || "UNKNOWN-TICKET";
   const targetUrl = state.targetUrl || "";
+  const description = state.description || "";
 
   // 1. Try to load custom instructions from instructions/ directory
   let customInstructions = "";
@@ -34,7 +35,7 @@ export const extractRequirements = async (
 ## Test Specification: ${ticketId}
 
 ### Overview
-Automated test suite for ticket ${ticketId}. 
+${description ? `User request: ${description}\n\n` : ""}Automated test suite for ticket ${ticketId}. 
 Generate comprehensive test cases covering:
 - Positive scenarios (happy path)
 - Negative scenarios (error handling, edge cases)

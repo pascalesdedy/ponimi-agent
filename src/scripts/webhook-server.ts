@@ -58,7 +58,7 @@ const server = http.createServer(async (req, res) => {
     // POST /run
     if (req.method === "POST" && path === "/run") {
       const body = await readBody(req);
-      const { ticketId, mode = "auto", url } = JSON.parse(body);
+      const { ticketId, mode = "auto", url, description } = JSON.parse(body);
 
       if (!ticketId) {
         res.writeHead(400);
@@ -72,10 +72,10 @@ const server = http.createServer(async (req, res) => {
         : validModes.includes(mode) ? mode
         : "autonomous";
 
-      const jobId = await enqueueJob(ticketId, resolvedMode as any, url);
+      const jobId = await enqueueJob(ticketId, resolvedMode as any, url, description);
 
       res.writeHead(202, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ jobId, ticketId, mode: resolvedMode, url: url || null }));
+      res.end(JSON.stringify({ jobId, ticketId, mode: resolvedMode, url: url || null, description: description || null }));
       return;
     }
 
@@ -101,7 +101,7 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 
 server.listen(PORT, HOST, () => {
   console.log(`🦄 Ponini Webhook Server listening on http://${HOST}:${PORT}`);
-  console.log(`   POST /run       — { ticketId, mode, url }`);
+  console.log(`   POST /run       — { ticketId, mode, url, description }`);
   console.log(`   GET  /status/:id — job status`);
   console.log(`   GET  /health     — ping`);
 });

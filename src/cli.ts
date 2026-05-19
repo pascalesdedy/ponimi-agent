@@ -21,6 +21,7 @@ program
   .description("Run agent for a ticket/project")
   .option("-t, --ticket <id>", "Ticket ID (e.g. QA-123)")
   .option("-u, --url <url>", "Target URL for tests (e.g. https://staging.example.com)")
+  .option("-d, --desc <text>", "Test description (e.g. 'Test login with Google SSO')")
   .option(
     "-m, --mode <mode>",
     "Operation mode: manual | semi | auto",
@@ -49,6 +50,7 @@ program
     const initialState = {
       ticketData: ticket,
       targetUrl: options.url || "",
+      description: options.desc || "",
       mode,
       retryCount: 0,
       currentStep: "🚀 Starting...",
@@ -198,6 +200,7 @@ program
   .description("Queue a QA job for background processing")
   .option("-t, --ticket <id>", "Ticket ID")
   .option("-u, --url <url>", "Target URL for tests")
+  .option("-d, --desc <text>", "Test description")
   .option("-m, --mode <mode>", "Mode: manual | semi | auto", "auto")
   .action(async (options) => {
     const ticket = options.ticket || `TICKET-${Date.now()}`;
@@ -206,11 +209,12 @@ program
     else if (options.mode === "manual") mode = "manual";
 
     const { enqueueJob } = await import("./queue/publisher");
-    const jobId = await enqueueJob(ticket, mode, options.url);
+    const jobId = await enqueueJob(ticket, mode, options.url, options.desc);
 
     console.log(`\n${pc.green("✅ Job queued!")}`);
     console.log(`  ${pc.cyan("Ticket:")} ${ticket}`);
     if (options.url) console.log(`  ${pc.cyan("URL:")} ${options.url}`);
+    if (options.desc) console.log(`  ${pc.cyan("Desc:")} ${options.desc}`);
     console.log(`  ${pc.cyan("Mode:")} ${options.mode}`);
     console.log(`  ${pc.cyan("Job ID:")} ${jobId}`);
     console.log(`\n  ${pc.dim("Check status:")} ${pc.green("ponimi status " + jobId)}`);
