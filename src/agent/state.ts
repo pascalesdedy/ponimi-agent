@@ -20,8 +20,14 @@ export const AgentStateAnnotation = Annotation.Root({
   // Pesan error jika eksekusi Playwright gagal di sandbox
   executionError: Annotation<string | null>(),
 
+  // Status eksekusi: 'not_run' | 'skipped' | 'passed' | 'failed'
+  executionStatus: Annotation<string>(),
+
   // Jumlah percobaan perbaikan diri (self-healing retry)
   retryCount: Annotation<number>(),
+
+  // Flag: disable self-heal (set when playwright not available)
+  selfHealDisabled: Annotation<boolean>(),
 
   // Mode operasi agen saat ini
   mode: Annotation<'manual' | 'semi-autonomous' | 'autonomous'>(),

@@ -22,11 +22,14 @@ Output ONLY the raw TypeScript code. No markdown fences, no explanations.`;
 /**
  * Generate Playwright test script from CSV test cases and instructions.
  * Falls back to mock script if LLM is unavailable.
+ * Includes previous error context for self-healing retries.
  */
 export const generatePlaywright = async (
   state: AgentState
 ): Promise<Partial<AgentState>> => {
   const csv = state.csvTestCases || "No test cases provided.";
+  const previousError = state.executionError;
+  const retryCount = state.retryCount || 0;
 
   // Load custom automation instructions
   let customInstructions = "";
@@ -51,6 +54,7 @@ export const generatePlaywright = async (
     const outputPath = saveScript(state, playwrightCode);
     return {
       playwrightCode,
+      executionStatus: "script_generated",
       currentStep: `✅ Playwright script saved (mock): ${outputPath}`,
     };
   }
@@ -61,14 +65,16 @@ export const generatePlaywright = async (
         { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
-          content: `Generate Playwright test script for these test cases:
-
-## CSV Test Cases
-${csv}
-
-${customInstructions ? `## Custom Automation Rules\n${customInstructions}` : ""}
-
-Generate a single complete Playwright test file covering ALL test cases.`,
+          content: [
+            `Generate Playwright test script for ticket ${state.ticketData || "UNKNOWN"}.`,
+            "",
+            "## CSV Test Cases",
+            csv,
+            customInstructions ? `\n## Custom Automation Rules\n${customInstructions}` : "",
+            previousError ? `\n## Previous Error (Retry #${retryCount})\nThe previous attempt failed with:\n\`\`\`\n${previousError.substring(0, 2000)}\n\`\`\`\n\nFix the script to avoid this error.` : "",
+            "",
+            "Generate a single complete Playwright test file covering ALL test cases.",
+          ].filter(Boolean).join("\n"),
         },
       ],
       { temperature: 0.2 }
@@ -77,6 +83,7 @@ Generate a single complete Playwright test file covering ALL test cases.`,
     const outputPath = saveScript(state, playwrightCode);
     return {
       playwrightCode,
+      executionStatus: "script_generated",
       currentStep: `✅ Playwright script saved: ${outputPath}`,
     };
   } catch (error) {
@@ -87,6 +94,7 @@ Generate a single complete Playwright test file covering ALL test cases.`,
     const outputPath = saveScript(state, playwrightCode);
     return {
       playwrightCode,
+      executionStatus: "script_generated",
       currentStep: `⚠️ LLM call failed (${errMsg}). Using mock script.`,
       executionError: errMsg,
     };

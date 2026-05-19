@@ -2,7 +2,7 @@
 
 import { Command } from "commander";
 import { intro, outro, spinner } from "@clack/prompts";
-import { app } from "./agent/graph";
+import { app, autoApp } from "./agent/graph";
 import { env } from "./config/env";
 import pc from "picocolors";
 
@@ -52,16 +52,21 @@ program
       csvTestCases: "",
       playwrightCode: "",
       executionError: null as string | null,
+      executionStatus: "not_run",
+      selfHealDisabled: false,
     };
 
-    const maxIterations = mode === "autonomous" ? 3 : 1;
-
     try {
+      // Auto mode: use autoApp (no interrupt), single stream
+      // Manual/semi mode: use app (with interrupt), single stream + loop for resume
+      const activeApp = mode === "autonomous" ? autoApp : app;
+      const maxIterations = mode === "autonomous" ? 1 : 3;
+
       let hasMore = true;
       let iteration = 0;
 
       while (hasMore && iteration < maxIterations) {
-        const stream = await app.stream(iteration === 0 ? initialState : null, config);
+        const stream = await activeApp.stream(iteration === 0 ? initialState : null, config);
 
         for await (const step of stream) {
           const nodeName = Object.keys(step)[0];
@@ -72,9 +77,8 @@ program
           }
         }
 
-        // Check if graph is paused at interrupt
-        const state = await app.getState(config);
-        hasMore = state?.next && state.next.length > 0;
+        const currentState = await activeApp.getState(config);
+        hasMore = (currentState?.next?.length ?? 0) > 0;
         iteration++;
       }
 

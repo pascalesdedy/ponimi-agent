@@ -1,4 +1,5 @@
 import { StateGraph, END, START } from "@langchain/langgraph";
+import { execSync } from "child_process";
 import { AgentStateAnnotation, AgentState } from "./state";
 import { extractRequirements } from "./nodes/extractRequirements";
 import { generateCsv } from "./nodes/generateCsv";
@@ -6,6 +7,19 @@ import { generatePlaywright } from "./nodes/generatePlaywright";
 import { executeTest } from "./nodes/executeTest";
 import { reportResults } from "./nodes/reportResults";
 import { checkpointer } from "../db/sqlite";
+
+/** Cached check: is Playwright installed on this machine? */
+let _pwAvailable: boolean | null = null;
+function isPlaywrightAvailable(): boolean {
+  if (_pwAvailable !== null) return _pwAvailable;
+  try {
+    execSync("npx playwright --version 2>/dev/null", { timeout: 5000, encoding: "utf-8" });
+    _pwAvailable = true;
+  } catch {
+    _pwAvailable = false;
+  }
+  return _pwAvailable;
+}
 
 /**
  * Route after CSV generation:
@@ -23,12 +37,20 @@ const routeAfterCsv = (state: AgentState): string => {
 
 /**
  * Route after test execution:
- * - If passed → report results
- * - If failed + retries left → regenerate Playwright (self-heal)
- * - If failed + max retries → end
+ * - 'passed' or 'skipped' → report results (no self-heal)
+ * - 'failed' + retries left → regenerate Playwright (self-heal)
+ * - 'failed' + max retries → report
  */
 const routeAfterExecution = (state: AgentState): string => {
-  if (!state.executionError) {
+  const status = state.executionStatus;
+
+  if (status === "passed" || status === "skipped") {
+    return "reportResults";
+  }
+
+  // status === "failed" → try self-heal
+  // Guard: skip self-heal if Playwright isn't installed (can't run tests anyway)
+  if (!isPlaywrightAvailable()) {
     return "reportResults";
   }
 
@@ -36,11 +58,11 @@ const routeAfterExecution = (state: AgentState): string => {
     return "generatePlaywright";
   }
 
-  // Max retries reached — still report what happened
+  // Max retries reached — still report
   return "reportResults";
 };
 
-// Build graph
+// Build graph — shared nodes
 const workflow = new StateGraph(AgentStateAnnotation)
   .addNode("extractRequirements", extractRequirements)
   .addNode("generateCsv", generateCsv)
@@ -67,8 +89,21 @@ const workflow = new StateGraph(AgentStateAnnotation)
   // Flow: report → end
   .addEdge("reportResults", END);
 
-// Compile with interrupt points + checkpointer
+// ── Two compiled graphs ──────────────────────────────────────────
+
+/**
+ * Graph for manual/semi modes: pauses at generatePlaywright for CSV review.
+ */
 export const app = workflow.compile({
   checkpointer,
-  interruptBefore: ["generatePlaywright"], // Pause here for CSV review
+  interruptBefore: ["generatePlaywright"],
+});
+
+/**
+ * Graph for autonomous mode: full flow without interrupts.
+ * Self-healing uses conditional edges (routeAfterExecution), not interrupt/resume.
+ */
+export const autoApp = workflow.compile({
+  checkpointer,
+  interruptBefore: [], // no pauses
 });

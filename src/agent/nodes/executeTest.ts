@@ -16,6 +16,7 @@ export const executeTest = async (
     return {
       currentStep: "⏭️ No Playwright code to execute (skipping)",
       executionError: null,
+      executionStatus: "skipped",
     };
   }
 
@@ -30,7 +31,8 @@ export const executeTest = async (
 
   const retryCount = (state.retryCount || 0) + 1;
 
-  // Check if playwright is available
+  // Quick check: if playwright not available, skip immediately.
+  // This avoids the self-healing loop when there's no runtime.
   let playwrightAvailable = false;
   try {
     execSync("npx playwright --version 2>/dev/null", {
@@ -45,11 +47,14 @@ export const executeTest = async (
   if (!playwrightAvailable) {
     return {
       executionError: null,
+      executionStatus: "skipped",
+      selfHealDisabled: true,
       retryCount,
       currentStep: `⏭️ Playwright not installed. Script saved to ${scriptPath}. Install with: npx playwright install`,
     };
   }
 
+  // Playwright is available — execute the test
   try {
     execSync(`npx playwright test "${scriptPath}" --reporter=json 2>&1`, {
       cwd: process.cwd(),
@@ -59,15 +64,20 @@ export const executeTest = async (
 
     return {
       executionError: null,
+      executionStatus: "passed",
       retryCount,
       currentStep: `✅ Tests passed (attempt ${retryCount})`,
     };
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
 
-    if (retryCount < 3) {
+    // Self-healing: retry with fixed script
+    const canRetry = retryCount < 3;
+
+    if (canRetry) {
       return {
         executionError: errMsg,
+        executionStatus: "failed",
         retryCount,
         currentStep: `🔄 Test failed (attempt ${retryCount}/3). Self-healing...`,
       };
@@ -75,6 +85,7 @@ export const executeTest = async (
 
     return {
       executionError: errMsg,
+      executionStatus: "failed",
       retryCount,
       currentStep: `❌ Test failed after ${retryCount} attempts. Max retries reached.`,
     };
