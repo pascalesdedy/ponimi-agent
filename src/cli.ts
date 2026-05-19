@@ -190,16 +190,95 @@ program
     }
   });
 
+// ─── enqueue ────────────────────────────────────────────────────────────────
+program
+  .command("enqueue")
+  .description("Queue a QA job for background processing")
+  .option("-t, --ticket <id>", "Ticket ID")
+  .option("-m, --mode <mode>", "Mode: manual | semi | auto", "auto")
+  .action(async (options) => {
+    const ticket = options.ticket || `TICKET-${Date.now()}`;
+    let mode: "manual" | "semi-autonomous" | "autonomous" = "autonomous";
+    if (options.mode === "semi") mode = "semi-autonomous";
+    else if (options.mode === "manual") mode = "manual";
+
+    const { enqueueJob } = await import("./worker/queue");
+    const jobId = await enqueueJob(ticket, mode);
+
+    console.log(`\n${pc.green("✅ Job queued!")}`);
+    console.log(`  ${pc.cyan("Ticket:")} ${ticket}`);
+    console.log(`  ${pc.cyan("Mode:")} ${options.mode}`);
+    console.log(`  ${pc.cyan("Job ID:")} ${jobId}`);
+    console.log(`\n  ${pc.dim("Check status:")} ${pc.green("ponimi status " + jobId)}`);
+  });
+
+// ─── status ──────────────────────────────────────────────────────────────────
+program
+  .command("status")
+  .description("Check a queued job's status")
+  .argument("<jobId>", "Job ID from enqueue")
+  .action(async (jobId) => {
+    const { getJobStatus } = await import("./worker/queue");
+    const status = await getJobStatus(jobId);
+
+    if (!status) {
+      console.log(`\n${pc.yellow("⚠️  Job not found:")} ${jobId}`);
+      process.exit(1);
+    }
+
+    console.log(`\n${pc.cyan("📋 Job Status:")}`);
+    console.log(`  ${pc.dim("ID:")} ${jobId}`);
+
+    const statusColors: Record<string, string> = {
+      waiting: pc.yellow("⏳ Waiting"),
+      active: pc.blue("🔄 Active"),
+      completed: pc.green("✅ Completed"),
+      failed: pc.red("❌ Failed"),
+    };
+    console.log(`  ${pc.dim("Status:")} ${statusColors[status.status] || status.status}`);
+
+    if (status.result) {
+      console.log(`  ${pc.dim("Result:")}`);
+      console.log(`    Ticket: ${status.result.ticketId}`);
+      console.log(`    Status: ${status.result.status}`);
+      console.log(`    Duration: ${status.result.duration}`);
+    }
+
+    if (status.failedReason) {
+      console.log(`  ${pc.red("Reason:")} ${status.failedReason.substring(0, 200)}`);
+    }
+  });
+
 // ─── worker ──────────────────────────────────────────────────────────────────
 program
   .command("worker")
-  .description("Start background worker for autonomous mode")
-  .action(async () => {
-    console.log(pc.cyan("👷 Ponimi Worker — listening for jobs..."));
-    console.log(pc.dim("(BullMQ worker — requires Redis running)"));
-    console.log(pc.dim("Press Ctrl+C to stop.\n"));
-    console.log("Worker mode: coming in Phase 5!");
-    console.log("For now, use: ponimi run --ticket <id> --mode auto");
+  .description("Start background worker that processes queued jobs")
+  .option("-c, --concurrency <n>", "Number of concurrent jobs", "1")
+  .action(async (options) => {
+    const concurrency = parseInt(options.concurrency, 10) || 1;
+
+    console.log(pc.cyan(`👷 Ponimi Worker — ${concurrency} concurrent slot(s)`));
+    console.log(pc.dim(`  Queue: ponimi-jobs @ redis://localhost:6379`));
+    console.log(pc.dim("  Press Ctrl+C to stop gracefully.\n"));
+
+    const { createWorker } = await import("./worker/queue");
+    const worker = createWorker(concurrency);
+
+    // Graceful shutdown
+    process.on("SIGINT", async () => {
+      console.log(pc.yellow("\n⏳ Shutting down worker..."));
+      await worker.close();
+      console.log(pc.green("✅ Worker stopped."));
+      process.exit(0);
+    });
+
+    process.on("SIGTERM", async () => {
+      await worker.close();
+      process.exit(0);
+    });
+
+    // Keep alive
+    await new Promise(() => {});
   });
 
 program.parse(process.argv);
