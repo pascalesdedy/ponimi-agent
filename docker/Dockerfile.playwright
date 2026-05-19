@@ -1,0 +1,31 @@
+FROM node:22-alpine
+
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    dumb-init
+
+# Install specific Playwright version compatible with Alpine
+RUN npm install -g @playwright/test@1.49.0
+
+# Link system Chromium to Playwright cache location
+RUN mkdir -p /root/.cache/ms-playwright && \
+    ln -s /usr/lib/chromium /root/.cache/ms-playwright/chromium-1128
+
+WORKDIR /workspace
+
+# Install dependencies for module resolution
+RUN npm init -y && npm install @playwright/test@1.49.0
+
+# Copy built-in config
+COPY docker/playwright.config.cjs /usr/local/share/pw.config.cjs
+COPY docker/run-playwright.sh /usr/local/bin/run-playwright.sh
+RUN chmod +x /usr/local/bin/run-playwright.sh
+
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/usr/local/bin/run-playwright.sh"]
