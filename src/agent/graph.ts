@@ -6,68 +6,67 @@ import { generatePlaywright } from "./nodes/generatePlaywright";
 import { executeTest } from "./nodes/executeTest";
 import { reportResults } from "./nodes/reportResults";
 
-// Fungsi untuk router/conditional edge
-const routeAfterCsv = (state: AgentState) => {
-  // Jika autonomous (Mode 3), bypass jeda dan langsung generate playwright
-  if (state.mode === 'autonomous') {
-    return 'generatePlaywright';
+/**
+ * Route after CSV generation:
+ * - Manual mode: pause for human review
+ * - Semi-autonomous: pause for CSV review
+ * - Autonomous: skip directly to Playwright generation
+ */
+const routeAfterCsv = (state: AgentState): string => {
+  if (state.mode === "autonomous") {
+    return "generatePlaywright";
   }
-  // Mode 1 (Manual) & Mode 2 (Semi), interrupt/pause untuk review manusia
-  return '__end__'; // Sebenarnya kita akan menggunakan `interruptBefore` di kompilasi graf
-};
-
-const routeAfterExecution = (state: AgentState) => {
-  // Jika berhasil (tidak ada error), lanjut ke step selanjutnya
-  if (!state.executionError) {
-    // Jika Mode 3 (Auto), lapor hasil
-    if (state.mode === 'autonomous') {
-      return 'reportResults';
-    }
-    // Jika Mode 1/2, eksekusi selesai
-    return END;
-  }
-  
-  // Jika error tapi retry limit belum tercapai, perbaiki diri (self-healing)
-  if (state.retryCount < 3) {
-    return 'generatePlaywright';
-  }
-  
-  // Jika gagal 3 kali beruntun, hentikan
+  // Manual & Semi both pause for review
   return END;
 };
 
-// Inisialisasi Graf
+/**
+ * Route after test execution:
+ * - If passed → report results
+ * - If failed + retries left → regenerate Playwright (self-heal)
+ * - If failed + max retries → end
+ */
+const routeAfterExecution = (state: AgentState): string => {
+  if (!state.executionError) {
+    return "reportResults";
+  }
+
+  if ((state.retryCount || 0) < 3) {
+    return "generatePlaywright";
+  }
+
+  // Max retries reached — still report what happened
+  return "reportResults";
+};
+
+// Build graph
 const workflow = new StateGraph(AgentStateAnnotation)
   .addNode("extractRequirements", extractRequirements)
   .addNode("generateCsv", generateCsv)
   .addNode("generatePlaywright", generatePlaywright)
   .addNode("executeTest", executeTest)
   .addNode("reportResults", reportResults)
-  
-  // Alur Awal
+
+  // Flow: START → extract → generate CSV → [pause or continue]
   .addEdge(START, "extractRequirements")
   .addEdge("extractRequirements", "generateCsv")
-  
-  // Percabangan setelah CSV dibuat
   .addConditionalEdges("generateCsv", routeAfterCsv, {
     generatePlaywright: "generatePlaywright",
-    __end__: END // Placeholder jika kita tidak memakai mekanisme interupsi bawaan
+    __end__: END,
   })
-  
-  // Dari Playwright langsung dieksekusi (jika bukan Mode 1 murni)
+
+  // Flow: generate Playwright → execute → [retry or report]
   .addEdge("generatePlaywright", "executeTest")
-  
-  // Percabangan Self-Healing
   .addConditionalEdges("executeTest", routeAfterExecution, {
     generatePlaywright: "generatePlaywright",
     reportResults: "reportResults",
-    __end__: END
+    __end__: END,
   })
-  
-  // Dari laporan hasil, grafik selesai
+
+  // Flow: report → end
   .addEdge("reportResults", END);
 
-// Compile Graph (Checkpointer akan di-inject saat pemanggilan instance graph)
+// Compile with interrupt points
 export const app = workflow.compile({
-  interruptBefore: ["generatePlaywright"], // Pause grafik di sini untuk menunggu persetujuan (Approve CSV)
+  interruptBefore: ["generatePlaywright"], // Pause here for CSV review
 });
