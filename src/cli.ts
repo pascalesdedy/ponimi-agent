@@ -95,19 +95,6 @@ program
         const err = currentState.values.executionError as string | null;
         const reportStep = currentState.values.currentStep as string | undefined;
 
-        // Save snapshot for cross-process resume
-        const dataDir = path.resolve(process.cwd(), "data");
-        if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-        if (csv) {
-          const snapPath = path.join(dataDir, `${threadId}.json`);
-          fs.writeFileSync(snapPath, JSON.stringify({
-            ticketData: ticket,
-            csvTestCases: csv,
-            mode,
-            retryCount: currentState.values.retryCount || 0,
-          }, null, 2), "utf-8");
-        }
-
         // Show console summary from reportResults (if available)
         if (reportStep && reportStep.includes("📊")) {
           console.log(`\n${reportStep}`);
@@ -168,128 +155,34 @@ program
     s.start("Resuming execution...");
 
     try {
-      // Try LangGraph resume first (works within same process)
       const config = {
         configurable: { thread_id: threadId },
       };
 
-      try {
-        const stream = await app.stream(null, config);
+      // Resume via LangGraph checkpointer (SQLite — works across restarts)
+      const stream = await app.stream(null, config);
 
-        for await (const step of stream) {
-          const nodeName = Object.keys(step)[0];
-          const nodeState = step[nodeName];
+      for await (const step of stream) {
+        const nodeName = Object.keys(step)[0];
+        const nodeState = step[nodeName];
 
-          if (nodeState?.currentStep) {
-            s.message(String(nodeState.currentStep));
-          }
+        if (nodeState?.currentStep) {
+          s.message(String(nodeState.currentStep));
         }
-
-        s.stop("✅ Execution resumed and complete");
-        outro("All steps complete!");
-        return;
-      } catch (_resumeErr) {
-        // Checkpointer not available (new process) — fallback to snapshot method
-        s.message("Checkpointer unavailable, using snapshot resume...");
       }
 
-      // ── Snapshot resume (cross-process) ────────────────────────────
-      const snapPath = path.resolve(process.cwd(), "data", `${threadId}.json`);
-      const modeLabel = mode === "semi-autonomous" ? "semi-autonomous" : "manual";
+      s.stop("✅ Execution resumed and complete");
 
-      s.message("Generating Playwright script from saved CSV...");
-
-      // Read CSV from snapshot or output
-      let savedCsv = "";
-      const outputCsvPath = path.resolve(process.cwd(), "output", `${ticket}-testcases.csv`);
-      if (fs.existsSync(snapPath)) {
-        const snap = JSON.parse(fs.readFileSync(snapPath, "utf-8"));
-        savedCsv = snap.csvTestCases || "";
-      }
-      if (!savedCsv && fs.existsSync(outputCsvPath)) {
-        savedCsv = fs.readFileSync(outputCsvPath, "utf-8");
+      // Show console summary from resume
+      const currentState = await app.getState(config);
+      if (currentState?.values?.currentStep) {
+        const step = String(currentState.values.currentStep);
+        if (step.includes("📊")) {
+          console.log(`\n${step}`);
+        }
       }
 
-      if (!savedCsv) {
-        throw new Error(`No saved CSV found for ${ticket}. Run 'ponimi run -t ${ticket} -m manual' first.`);
-      }
-
-      // Load instructions
-      let instructions = "";
-      const instructionsDir = path.resolve(process.cwd(), "instructions");
-      const instructionsPath = path.join(instructionsDir, "automation", "playwright.md");
-      if (fs.existsSync(instructionsPath)) {
-        instructions = fs.readFileSync(instructionsPath, "utf-8");
-      }
-
-      // Run generatePlaywright node directly
-      const { generatePlaywright } = await import("./agent/nodes/generatePlaywright");
-      const pwState = await generatePlaywright({
-        ticketData: ticket,
-        csvTestCases: savedCsv,
-        playwrightCode: "",
-        instructions,
-        mode,
-        retryCount: 0,
-        currentStep: "",
-        executionError: null,
-        executionStatus: "not_run",
-        selfHealDisabled: false,
-        startTime: null,
-        endTime: null,
-        attemptHistory: [],
-      } as any);
-
-      if (pwState.currentStep) {
-        s.message(String(pwState.currentStep));
-      }
-
-      const playwrightCode = pwState.playwrightCode || "";
-
-      // Save the script
-      const scriptDir = path.resolve(process.cwd(), "output");
-      if (!fs.existsSync(scriptDir)) fs.mkdirSync(scriptDir, { recursive: true });
-      const scriptPath = path.join(scriptDir, `${ticket}.spec.ts`);
-      fs.writeFileSync(scriptPath, playwrightCode, "utf-8");
-
-      // Manual mode: stop after script generation
-      if (mode === "manual") {
-        s.stop(`✅ Script generated: ${pc.cyan(scriptPath)}`);
-        console.log(`\n${pc.cyan("💻 Generated Script:")}`);
-        console.log(playwrightCode.substring(0, 500));
-        if (playwrightCode.length > 500) console.log(pc.dim(`... (${playwrightCode.length - 500} more chars)`));
-        outro("Manual mode complete!");
-        return;
-      }
-
-      // Semi mode: execute the test
-      s.message("Executing Playwright tests...");
-      const { executeTest } = await import("./agent/nodes/executeTest");
-      const execState = await executeTest({
-        ticketData: ticket,
-        csvTestCases: savedCsv,
-        playwrightCode,
-        instructions,
-        mode,
-        retryCount: 1,
-        executionError: null,
-        executionStatus: "script_generated",
-        selfHealDisabled: false,
-        currentStep: "",
-      } as any); // Skip full AgentState for manual node call
-
-      if (execState.currentStep) {
-        s.message(String(execState.currentStep));
-      }
-
-      s.stop(
-        execState.executionStatus === "passed"
-          ? "✅ All tests passed!"
-          : execState.executionStatus === "skipped"
-            ? "⏭️ Execution skipped (no Playwright installed)"
-            : "❌ Tests failed. Check output/" + ticket + "-report.txt"
-      );
-      outro("Resume complete!");
+      outro("All steps complete!");
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       s.stop(pc.red(`❌ Error: ${errMsg}`));
