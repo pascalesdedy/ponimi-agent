@@ -34,6 +34,20 @@ export const AgentStateAnnotation = Annotation.Root({
 
   // Progres langkah saat ini (digunakan untuk UX/CLI Spinner)
   currentStep: Annotation<string>(),
+
+  // When execution started (ISO string)
+  startTime: Annotation<string | null>(),
+
+  // When execution ended (ISO string)
+  endTime: Annotation<string | null>(),
+
+  // History of self-healing attempts: [{retryCount, timestamp, error, status}]
+  attemptHistory: Annotation<Array<{
+    retryCount: number;
+    timestamp: string;
+    error: string | null;
+    status: string;
+  }>>(),
 });
 
 // Tipe statis untuk kemudahan pengetikan di Node

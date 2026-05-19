@@ -30,9 +30,9 @@ export const executeTest = async (
   fs.writeFileSync(scriptPath, code, "utf-8");
 
   const retryCount = (state.retryCount || 0) + 1;
+  const timestamp = new Date().toISOString();
 
   // Quick check: if playwright not available, skip immediately.
-  // This avoids the self-healing loop when there's no runtime.
   let playwrightAvailable = false;
   try {
     execSync("npx playwright --version 2>/dev/null", {
@@ -50,6 +50,12 @@ export const executeTest = async (
       executionStatus: "skipped",
       selfHealDisabled: true,
       retryCount,
+      startTime: state.startTime || timestamp,
+      endTime: timestamp,
+      attemptHistory: [
+        ...(state.attemptHistory || []),
+        { retryCount: 0, timestamp, error: null, status: "skipped" },
+      ],
       currentStep: `⏭️ Playwright not installed. Script saved to ${scriptPath}. Install with: npx playwright install`,
     };
   }
@@ -66,12 +72,17 @@ export const executeTest = async (
       executionError: null,
       executionStatus: "passed",
       retryCount,
+      startTime: state.startTime || timestamp,
+      endTime: timestamp,
+      attemptHistory: [
+        ...(state.attemptHistory || []),
+        { retryCount, timestamp, error: null, status: "passed" },
+      ],
       currentStep: `✅ Tests passed (attempt ${retryCount})`,
     };
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
 
-    // Self-healing: retry with fixed script
     const canRetry = retryCount < 3;
 
     if (canRetry) {
@@ -79,6 +90,11 @@ export const executeTest = async (
         executionError: errMsg,
         executionStatus: "failed",
         retryCount,
+        startTime: state.startTime || timestamp,
+        attemptHistory: [
+          ...(state.attemptHistory || []),
+          { retryCount, timestamp, error: errMsg.substring(0, 500), status: "failed" },
+        ],
         currentStep: `🔄 Test failed (attempt ${retryCount}/3). Self-healing...`,
       };
     }
@@ -87,6 +103,12 @@ export const executeTest = async (
       executionError: errMsg,
       executionStatus: "failed",
       retryCount,
+      startTime: state.startTime || timestamp,
+      endTime: timestamp,
+      attemptHistory: [
+        ...(state.attemptHistory || []),
+        { retryCount, timestamp, error: errMsg.substring(0, 500), status: "failed" },
+      ],
       currentStep: `❌ Test failed after ${retryCount} attempts. Max retries reached.`,
     };
   }

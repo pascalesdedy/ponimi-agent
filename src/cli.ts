@@ -93,6 +93,7 @@ program
         const csv = currentState.values.csvTestCases as string | undefined;
         const pw = currentState.values.playwrightCode as string | undefined;
         const err = currentState.values.executionError as string | null;
+        const reportStep = currentState.values.currentStep as string | undefined;
 
         // Save snapshot for cross-process resume
         const dataDir = path.resolve(process.cwd(), "data");
@@ -107,20 +108,27 @@ program
           }, null, 2), "utf-8");
         }
 
-        if (csv) {
-          console.log(`\n${pc.cyan("📋 Generated Test Cases:")}`);
-          console.log(csv.substring(0, 800));
-          if (csv.length > 800) console.log(pc.dim(`... (${csv.length - 800} more chars)`));
-        }
+        // Show console summary from reportResults (if available)
+        if (reportStep && reportStep.includes("📊")) {
+          console.log(`\n${reportStep}`);
+        } else {
+          if (csv) {
+            console.log(`\n${pc.cyan("📋 Generated Test Cases:")}`);
+            const preview = csv.substring(0, 600);
+            console.log(preview);
+            if (csv.length > 600) console.log(pc.dim(`... (${csv.length - 600} more chars)`));
+          }
 
-        if (pw) {
-          console.log(`\n${pc.cyan("💻 Generated Script:")}`);
-          console.log(pw.substring(0, 500));
-          if (pw.length > 500) console.log(pc.dim(`... (${pw.length - 500} more chars)`));
-        }
+          if (pw) {
+            console.log(`\n${pc.cyan("💻 Generated Script:")}`);
+            const preview = pw.substring(0, 400);
+            console.log(preview);
+            if (pw.length > 400) console.log(pc.dim(`... (${pw.length - 400} more chars)`));
+          }
 
-        if (err) {
-          console.log(`\n${pc.red("❌ Error:")} ${err.substring(0, 300)}`);
+          if (err) {
+            console.log(`\n${pc.red("❌ Error:")} ${err.substring(0, 200)}`);
+          }
         }
       }
 
@@ -227,7 +235,10 @@ program
         executionError: null,
         executionStatus: "not_run",
         selfHealDisabled: false,
-      });
+        startTime: null,
+        endTime: null,
+        attemptHistory: [],
+      } as any);
 
       if (pwState.currentStep) {
         s.message(String(pwState.currentStep));
