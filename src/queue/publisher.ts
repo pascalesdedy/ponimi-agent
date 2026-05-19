@@ -1,20 +1,57 @@
-import { Queue } from 'bullmq';
-import { env } from '../config/env';
+import { Queue } from "bullmq";
+import { env } from "../config/env";
 
-/**
- * Koneksi antrian untuk mengirimkan Job baru.
- */
-export const qaQueue = new Queue('qa-jobs', {
-  connection: { url: env.REDIS_URL },
+const REDIS_URL = env.REDIS_URL || "redis://localhost:6379";
+const QUEUE_NAME = "ponimi-jobs";
+
+export const qaQueue = new Queue(QUEUE_NAME, {
+  connection: { url: REDIS_URL },
 });
 
 /**
- * Fungsi untuk menambahkan job baru ke antrian.
- * Biasanya dipanggil oleh Webhook Handler (atau bisa disimulasikan via CLI).
- * @param ticketId ID Jira Tiket
+ * Add a QA job to the queue.
+ * Returns the job ID for status tracking.
  */
-export const addQaJob = async (ticketId: string) => {
-  const job = await qaQueue.add('run-qa', { ticketId });
-  console.log(`[Publisher] Job ${job.id} ditambahkan ke antrian untuk tiket ${ticketId}`);
-  return job;
-};
+export async function enqueueJob(
+  ticketId: string,
+  mode: "manual" | "semi-autonomous" | "autonomous" = "autonomous"
+): Promise<string> {
+  const job = await qaQueue.add(
+    "qa-run",
+    {
+      ticketId,
+      mode,
+      submittedAt: new Date().toISOString(),
+    },
+    {
+      attempts: 1,
+      removeOnComplete: 100,
+      removeOnFail: 50,
+    }
+  );
+  return job.id ?? "unknown";
+}
+
+/**
+ * Get job status from BullMQ.
+ */
+export async function getJobStatus(
+  jobId: string
+): Promise<{
+  status: "waiting" | "active" | "completed" | "failed";
+  result?: Record<string, unknown>;
+  failedReason?: string;
+} | null> {
+  const { Job } = await import("bullmq");
+  const job = await Job.fromId(qaQueue, jobId);
+  if (!job) return null;
+
+  const state = await job.getState();
+  const validStatus = state as "waiting" | "active" | "completed" | "failed";
+
+  return {
+    status: validStatus,
+    result: (job.returnvalue as Record<string, unknown> | undefined) ?? undefined,
+    failedReason: job.failedReason ?? undefined,
+  };
+}

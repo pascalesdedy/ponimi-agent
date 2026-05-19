@@ -202,7 +202,7 @@ program
     if (options.mode === "semi") mode = "semi-autonomous";
     else if (options.mode === "manual") mode = "manual";
 
-    const { enqueueJob } = await import("./worker/queue");
+    const { enqueueJob } = await import("./queue/publisher");
     const jobId = await enqueueJob(ticket, mode);
 
     console.log(`\n${pc.green("✅ Job queued!")}`);
@@ -218,7 +218,7 @@ program
   .description("Check a queued job's status")
   .argument("<jobId>", "Job ID from enqueue")
   .action(async (jobId) => {
-    const { getJobStatus } = await import("./worker/queue");
+    const { getJobStatus } = await import("./queue/publisher");
     const status = await getJobStatus(jobId);
 
     if (!status) {
@@ -261,7 +261,7 @@ program
     console.log(pc.dim(`  Queue: ponimi-jobs @ redis://localhost:6379`));
     console.log(pc.dim("  Press Ctrl+C to stop gracefully.\n"));
 
-    const { createWorker } = await import("./worker/queue");
+    const { createWorker } = await import("./queue/worker");
     const worker = createWorker(concurrency);
 
     // Graceful shutdown
