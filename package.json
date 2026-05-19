@@ -1,0 +1,35 @@
+{
+  "name": "homelab-qa-agent",
+  "version": "1.0.0",
+  "description": "Homelab-grade Autonomous QA Agent CLI using LangGraph and Playwright",
+  "main": "dist/cli.js",
+  "bin": {
+    "qa-agent": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts",
+    "cli": "ts-node src/cli.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.9.0",
+    "@langchain/anthropic": "^0.3.0",
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/langgraph-checkpoint": "^0.0.13",
+    "@langchain/openai": "^0.3.0",
+    "bullmq": "^5.0.0",
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.3.2",
+    "langchain": "^0.3.0",
+    "picocolors": "^1.0.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
