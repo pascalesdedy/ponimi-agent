@@ -36,6 +36,18 @@ const routeAfterCsv = (state: AgentState): string => {
 };
 
 /**
+ * Route after Playwright generation:
+ * - Manual mode: stop (user just wants the script)
+ * - Semi / Auto: execute the test
+ */
+const routeAfterPlaywright = (state: AgentState): string => {
+  if (state.mode === "manual") {
+    return "reportResults";
+  }
+  return "executeTest";
+};
+
+/**
  * Route after test execution:
  * - 'passed' or 'skipped' → report results (no self-heal)
  * - 'failed' + retries left → regenerate Playwright (self-heal)
@@ -78,8 +90,14 @@ const workflow = new StateGraph(AgentStateAnnotation)
     __end__: END,
   })
 
-  // Flow: generate Playwright → execute → [retry or report]
-  .addEdge("generatePlaywright", "executeTest")
+  // Flow: generate Playwright → [manual: end | semi/auto: execute]
+  .addConditionalEdges("generatePlaywright", routeAfterPlaywright, {
+    executeTest: "executeTest",
+    reportResults: "reportResults",
+    __end__: END,
+  })
+
+  // Flow: execute → [retry or report]
   .addConditionalEdges("executeTest", routeAfterExecution, {
     generatePlaywright: "generatePlaywright",
     reportResults: "reportResults",
