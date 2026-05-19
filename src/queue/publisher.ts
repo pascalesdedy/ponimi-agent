@@ -8,21 +8,30 @@ export const qaQueue = new Queue(QUEUE_NAME, {
   connection: { url: REDIS_URL },
 });
 
+export interface QueuedJob {
+  ticketId: string;
+  mode: "manual" | "semi-autonomous" | "autonomous";
+  targetUrl?: string;
+  submittedAt: string;
+}
+
 /**
  * Add a QA job to the queue.
  * Returns the job ID for status tracking.
  */
 export async function enqueueJob(
   ticketId: string,
-  mode: "manual" | "semi-autonomous" | "autonomous" = "autonomous"
+  mode: "manual" | "semi-autonomous" | "autonomous" = "autonomous",
+  targetUrl?: string
 ): Promise<string> {
   const job = await qaQueue.add(
     "qa-run",
     {
       ticketId,
       mode,
+      targetUrl: targetUrl || "",
       submittedAt: new Date().toISOString(),
-    },
+    } satisfies QueuedJob,
     {
       attempts: 1,
       removeOnComplete: 100,

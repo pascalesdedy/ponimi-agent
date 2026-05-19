@@ -32,6 +32,9 @@ export const AgentStateAnnotation = Annotation.Root({
   // Mode operasi agen saat ini
   mode: Annotation<'manual' | 'semi-autonomous' | 'autonomous'>(),
 
+  // Target URL for test execution (e.g. https://staging.example.com)
+  targetUrl: Annotation<string>(),
+
   // Progres langkah saat ini (digunakan untuk UX/CLI Spinner)
   currentStep: Annotation<string>(),
 

@@ -10,6 +10,7 @@ export const extractRequirements = async (
   state: AgentState
 ): Promise<Partial<AgentState>> => {
   const ticketId = state.ticketData || "UNKNOWN-TICKET";
+  const targetUrl = state.targetUrl || "";
 
   // 1. Try to load custom instructions from instructions/ directory
   let customInstructions = "";
@@ -39,6 +40,9 @@ Generate comprehensive test cases covering:
 - Negative scenarios (error handling, edge cases)
 - Boundary conditions
 - UI validation where applicable
+
+### Target Environment
+${targetUrl ? `Base URL: ${targetUrl}\n- All tests should navigate relative to this URL\n- Use this URL for the application under test` : "No specific URL provided. Use example.com as placeholder."}
 
 ### Requirements
 - All test cases must be executable via Playwright

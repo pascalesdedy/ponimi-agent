@@ -16,6 +16,7 @@ Requirements:
 - Use Page Object Model pattern when appropriate
 - Add proper error handling and timeouts
 - Include beforeEach/afterEach for setup/teardown
+- Use the provided BASE_URL as the application root URL
 
 Output ONLY the raw TypeScript code. No markdown fences, no explanations.`;
 
@@ -50,7 +51,7 @@ export const generatePlaywright = async (
   // Use mock if env says so or no API key
   const noApiKey = !env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY;
   if (env.LLM_MOCK || noApiKey) {
-    const playwrightCode = generateMockScript(state.ticketData || "TICKET", csv);
+    const playwrightCode = generateMockScript(state.ticketData || "TICKET", csv, state.targetUrl);
     const outputPath = saveScript(state, playwrightCode);
     return {
       playwrightCode,
@@ -90,7 +91,7 @@ export const generatePlaywright = async (
     const errMsg = error instanceof Error ? error.message : String(error);
 
     // Fallback to mock
-    const playwrightCode = generateMockScript(state.ticketData || "TICKET", csv);
+    const playwrightCode = generateMockScript(state.ticketData || "TICKET", csv, state.targetUrl);
     const outputPath = saveScript(state, playwrightCode);
     return {
       playwrightCode,
@@ -101,13 +102,16 @@ export const generatePlaywright = async (
   }
 };
 
-function generateMockScript(ticketId: string, csv: string): string {
+function generateMockScript(ticketId: string, csv: string, targetUrl?: string): string {
+  const baseUrl = (targetUrl || "https://example.com").replace(/\/+$/, "");
   const module = ticketId.includes("LOGIN") ? "Login" : ticketId.includes("PAY") ? "Payment" : "Main";
   return `import { test, expect } from '@playwright/test';
 
+const BASE_URL = '${baseUrl}';
+
 test.describe('${module} Module - ${ticketId}', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto(BASE_URL);
   });
 
   // TC-001: Successfully login with valid credentials
