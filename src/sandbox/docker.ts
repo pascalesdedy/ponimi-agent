@@ -92,7 +92,7 @@ export async function runInSandbox(
       [
         "run",
         "--rm",
-        "--network", "none",
+        "--network", "host",
         "--memory", "256m",
         "--memory-swap", "384m",
         "--cpus", "1",
@@ -172,13 +172,13 @@ export function isPlaywrightAvailableNative(): boolean {
   }
 }
 
-/** Auto-detect: prefer native (faster), fallback to sandbox, fallback to none */
+/** Auto-detect: prefer sandbox (isolated), fallback to native, fallback to none */
 export function getBestExecutor(): "sandbox" | "native" | "none" {
-  if (isPlaywrightAvailableNative()) {
-    return "native";
-  }
   if (isSandboxAvailable() && isSandboxImageBuilt()) {
     return "sandbox";
+  }
+  if (isPlaywrightAvailableNative()) {
+    return "native";
   }
   return "none";
 }
