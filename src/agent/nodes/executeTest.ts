@@ -201,6 +201,7 @@ export const executeTest = async (
         { retryCount, timestamp, error: null, status: "passed" },
       ],
       currentStep: `✅ Tests passed via ${attemptLabel} (attempt ${retryCount})`,
+      selfHealDisabled: true, // signal to graph: don't retry
     };
   }
 
@@ -229,10 +230,11 @@ export const executeTest = async (
       currentStep: `🔄 Test failed via ${attemptLabel} (attempt ${retryCount}/${MAX_RETRIES}). ${healingHint}`,
       // Store healing context for the regenerate step
       instructions: healingHint,
+      selfHealDisabled: false, // can still try
     };
   }
 
-  // ── Max retries reached ──────────────────────────────────────────
+  // ── Max retries reached — signal graph to stop ────────────────────
   return {
     executionError: fullError,
     executionStatus: "failed",
@@ -241,5 +243,6 @@ export const executeTest = async (
     endTime: timestamp,
     attemptHistory: [...(state.attemptHistory || []), attemptEntry],
     currentStep: `❌ Test failed via ${attemptLabel} after ${retryCount} attempts. Max retries reached.\n  ${healingHint}`,
+    selfHealDisabled: true, // signal to graph: stop retrying
   };
 };

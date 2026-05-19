@@ -172,13 +172,13 @@ export function isPlaywrightAvailableNative(): boolean {
   }
 }
 
-/** Auto-detect: prefer sandbox, fallback to native, fallback to none */
+/** Auto-detect: prefer native (faster), fallback to sandbox, fallback to none */
 export function getBestExecutor(): "sandbox" | "native" | "none" {
-  if (isSandboxAvailable() && isSandboxImageBuilt()) {
-    return "sandbox";
-  }
   if (isPlaywrightAvailableNative()) {
     return "native";
+  }
+  if (isSandboxAvailable() && isSandboxImageBuilt()) {
+    return "sandbox";
   }
   return "none";
 }

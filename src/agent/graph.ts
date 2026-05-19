@@ -8,17 +8,29 @@ import { executeTest } from "./nodes/executeTest";
 import { reportResults } from "./nodes/reportResults";
 import { checkpointer } from "../db/sqlite";
 
-/** Cached check: is Playwright installed on this machine? */
-let _pwAvailable: boolean | null = null;
-function isPlaywrightAvailable(): boolean {
-  if (_pwAvailable !== null) return _pwAvailable;
+/** Cached check: is a test executor available (native Playwright or Docker sandbox)? */
+let _executorAvailable: boolean | null = null;
+function executorAvailable(): boolean {
+  if (_executorAvailable !== null) return _executorAvailable;
+  // Check native Playwright
   try {
     execSync("npx playwright --version 2>/dev/null", { timeout: 5000, encoding: "utf-8" });
-    _pwAvailable = true;
+    _executorAvailable = true;
+    return true;
   } catch {
-    _pwAvailable = false;
+    // fall through
   }
-  return _pwAvailable;
+  // Check Docker sandbox
+  try {
+    const images = execSync("docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null", {
+      timeout: 5000, encoding: "utf-8"
+    });
+    _executorAvailable = images.includes("ponimi-playwright");
+    return _executorAvailable;
+  } catch {
+    _executorAvailable = false;
+    return false;
+  }
 }
 
 /**
@@ -49,29 +61,37 @@ const routeAfterPlaywright = (state: AgentState): string => {
 
 /**
  * Route after test execution:
- * - 'passed' or 'skipped' → report results (no self-heal)
- * - 'failed' + retries left → regenerate Playwright (self-heal)
- * - 'failed' + max retries → report
+ * - 'passed' or 'skipped' → report results
+ * - 'failed' + selfHealDisabled → report results (no more retries)
+ * - 'failed' + can retry + executor available → regenerate (self-heal)
+ * - 'failed' + no executor → report results (skip self-heal)
  */
 const routeAfterExecution = (state: AgentState): string => {
   const status = state.executionStatus;
 
+  // Passed/skipped → always report
   if (status === "passed" || status === "skipped") {
     return "reportResults";
   }
 
-  // status === "failed" → try self-heal
-  // Guard: skip self-heal if Playwright isn't installed (can't run tests anyway)
-  if (!isPlaywrightAvailable()) {
+  // status === "failed" — check if self-heal allowed
+  // Guard 1: explicit selfHealDisabled flag (executor said max retries)
+  if (state.selfHealDisabled) {
     return "reportResults";
   }
 
-  if ((state.retryCount || 0) < 3) {
-    return "generatePlaywright";
+  // Guard 2: no executor available at all (native or sandbox)
+  if (!executorAvailable()) {
+    return "reportResults";
   }
 
-  // Max retries reached — still report
-  return "reportResults";
+  // Guard 3: retry count under max
+  if ((state.retryCount || 0) >= 3) {
+    return "reportResults";
+  }
+
+  // All guards passed → self-heal
+  return "generatePlaywright";
 };
 
 // Build graph — shared nodes
