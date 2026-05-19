@@ -31,13 +31,8 @@ program
     if (options.mode === "auto") mode = "autonomous";
     else if (options.mode === "semi") mode = "semi-autonomous";
 
-    // Validate API key
     if (!env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY) {
-      console.error(
-        pc.red("❌ No API key configured!") +
-          "\n   Set DEEPSEEK_API_KEY in .env"
-      );
-      process.exit(1);
+      console.log(pc.yellow("⚠️  No API key configured. Running in mock mode.\n"));
     }
 
     const threadId = `thread-${ticket}`;
@@ -46,6 +41,7 @@ program
     };
 
     const s = spinner();
+    s.start("Initializing...");
 
     const initialState = {
       ticketData: ticket,
@@ -58,48 +54,54 @@ program
       executionError: null as string | null,
     };
 
+    const maxIterations = mode === "autonomous" ? 3 : 1;
+
     try {
-      const stream = await app.stream(initialState, config);
+      let hasMore = true;
+      let iteration = 0;
 
-      for await (const step of stream) {
-        const nodeName = Object.keys(step)[0];
-        const nodeState = step[nodeName];
+      while (hasMore && iteration < maxIterations) {
+        const stream = await app.stream(iteration === 0 ? initialState : null, config);
 
-        if (nodeState?.currentStep) {
-          s.stop(String(nodeState.currentStep));
-          s.start();
+        for await (const step of stream) {
+          const nodeName = Object.keys(step)[0];
+          const nodeState = step[nodeName];
+
+          if (nodeState?.currentStep) {
+            s.message(String(nodeState.currentStep));
+          }
         }
+
+        // Check if graph is paused at interrupt
+        const state = await app.getState(config);
+        hasMore = state?.next && state.next.length > 0;
+        iteration++;
       }
 
       s.stop("✅ Graph execution complete");
 
-      // Get final state
+      // Show results
       const currentState = await app.getState(config);
 
       if (currentState) {
         const csv = currentState.values.csvTestCases as string | undefined;
         const pw = currentState.values.playwrightCode as string | undefined;
+        const err = currentState.values.executionError as string | null;
 
         if (csv) {
           console.log(`\n${pc.cyan("📋 Generated Test Cases:")}`);
-          console.log(csv.substring(0, 1000));
-          if (csv.length > 1000) {
-            console.log(pc.dim(`... (${csv.length - 1000} more chars)`));
-          }
+          console.log(csv.substring(0, 800));
+          if (csv.length > 800) console.log(pc.dim(`... (${csv.length - 800} more chars)`));
         }
 
         if (pw) {
           console.log(`\n${pc.cyan("💻 Generated Script:")}`);
           console.log(pw.substring(0, 500));
-          if (pw.length > 500) {
-            console.log(pc.dim(`... (${pw.length - 500} more chars)`));
-          }
+          if (pw.length > 500) console.log(pc.dim(`... (${pw.length - 500} more chars)`));
         }
 
-        const err = currentState.values.executionError as string | null;
         if (err) {
-          console.log(`\n${pc.red("❌ Execution Error:")}`);
-          console.log(err.substring(0, 500));
+          console.log(`\n${pc.red("❌ Error:")} ${err.substring(0, 300)}`);
         }
       }
 
@@ -122,8 +124,7 @@ program
   .description("Resume paused graph (approve CSV, continue execution)")
   .option("-t, --thread <id>", "Thread ID to resume")
   .action(async (options) => {
-    const threadId =
-      options.thread || `thread-TICKET-${Date.now()}`;
+    const threadId = options.thread || `thread-TICKET-${Date.now()}`;
     const config = {
       configurable: { thread_id: threadId },
     };
@@ -139,8 +140,7 @@ program
         const nodeState = step[nodeName];
 
         if (nodeState?.currentStep) {
-          s.stop(String(nodeState.currentStep));
-          s.start();
+          s.message(String(nodeState.currentStep));
         }
       }
 

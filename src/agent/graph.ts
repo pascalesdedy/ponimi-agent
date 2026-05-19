@@ -5,6 +5,7 @@ import { generateCsv } from "./nodes/generateCsv";
 import { generatePlaywright } from "./nodes/generatePlaywright";
 import { executeTest } from "./nodes/executeTest";
 import { reportResults } from "./nodes/reportResults";
+import { checkpointer } from "../db/sqlite";
 
 /**
  * Route after CSV generation:
@@ -66,7 +67,8 @@ const workflow = new StateGraph(AgentStateAnnotation)
   // Flow: report → end
   .addEdge("reportResults", END);
 
-// Compile with interrupt points
+// Compile with interrupt points + checkpointer
 export const app = workflow.compile({
+  checkpointer,
   interruptBefore: ["generatePlaywright"], // Pause here for CSV review
 });

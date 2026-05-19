@@ -25,6 +25,9 @@ const envSchema = z.object({
   JIRA_DOMAIN: z.string().optional(),
   GITHUB_TOKEN: z.string().optional(),
 
+  // Use mock data instead of calling LLM (for testing)
+  LLM_MOCK: z.coerce.boolean().default(false),
+
   // Environment
   MODE: z.enum(['development', 'production']).default('development'),
 });

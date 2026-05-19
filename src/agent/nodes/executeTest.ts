@@ -6,6 +6,7 @@ import { AgentState } from "../state";
 /**
  * Execute the generated Playwright script and capture results.
  * Supports self-healing by setting executionError on failure.
+ * Auto-detects if Playwright is installed; skips execution if not.
  */
 export const executeTest = async (
   state: AgentState
@@ -13,8 +14,8 @@ export const executeTest = async (
   const code = state.playwrightCode;
   if (!code) {
     return {
-      currentStep: "❌ No Playwright code to execute",
-      executionError: "playwrightCode is empty",
+      currentStep: "⏭️ No Playwright code to execute (skipping)",
+      executionError: null,
     };
   }
 
@@ -24,23 +25,37 @@ export const executeTest = async (
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // Save the script
   const scriptPath = path.join(outputDir, `${ticketId}.spec.ts`);
   fs.writeFileSync(scriptPath, code, "utf-8");
 
   const retryCount = (state.retryCount || 0) + 1;
 
+  // Check if playwright is available
+  let playwrightAvailable = false;
   try {
-    // Run the Playwright test
-    // In production, this would use Docker sandbox. For now, run directly.
-    const result = execSync(
-      `npx playwright test "${scriptPath}" --reporter=json 2>&1`,
-      {
-        cwd: process.cwd(),
-        timeout: 120_000, // 2 min timeout
-        encoding: "utf-8",
-      }
-    );
+    execSync("npx playwright --version 2>/dev/null", {
+      timeout: 5000,
+      encoding: "utf-8",
+    });
+    playwrightAvailable = true;
+  } catch {
+    playwrightAvailable = false;
+  }
+
+  if (!playwrightAvailable) {
+    return {
+      executionError: null,
+      retryCount,
+      currentStep: `⏭️ Playwright not installed. Script saved to ${scriptPath}. Install with: npx playwright install`,
+    };
+  }
+
+  try {
+    execSync(`npx playwright test "${scriptPath}" --reporter=json 2>&1`, {
+      cwd: process.cwd(),
+      timeout: 120_000,
+      encoding: "utf-8",
+    });
 
     return {
       executionError: null,
@@ -50,7 +65,6 @@ export const executeTest = async (
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
 
-    // Check if we should retry (self-healing)
     if (retryCount < 3) {
       return {
         executionError: errMsg,
@@ -59,7 +73,6 @@ export const executeTest = async (
       };
     }
 
-    // Max retries reached
     return {
       executionError: errMsg,
       retryCount,
