@@ -1,0 +1,17 @@
+[Unit]
+Description=Ponimi QA Agent — Webhook Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/ponimi-agent
+ExecStart=/usr/bin/node /opt/ponimi-agent/dist/scripts/webhook-server.js
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+TimeoutStopSec=10
+EnvironmentFile=/etc/ponimi.env
+
+[Install]
+WantedBy=multi-user.target

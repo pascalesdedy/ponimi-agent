@@ -1,129 +1,183 @@
-# 🤖 Ponimi Agent — Homelab QA Agent CLI
+# 🤖 Ponimi Agent — QA Test Automation Agent
 
-Autonomous QA Agent berbasis **LangGraph** dan **Playwright** yang dirancang untuk lingkungan *Homelab* atau *Small VPS* dengan overhead minimal.
+Autonomous QA Agent berbasis **LLM** (DeepSeek) + **Playwright** + **BullMQ**. Generate test cases dan Playwright script otomatis dari deskripsi atau URL, lalu eksekusi di Docker sandbox.
 
-## ✨ Fitur Utama
+> **Untuk klien**: clone → setup → jalanin. No AI assistant required.
 
-- **3 Mode Operasi**: Manual, Semi-Autonomous, dan Full Autonomous
-- **Self-Healing**: Jika test gagal, agen memperbaiki script sendiri (maks 3x retry)
-- **CLI-first**: Semua interaksi via command line dengan progress tracking real-time
-- **Instruksi Kustom**: Folder `.md` terpisah untuk aturan generate test case & automation script
-- **Queue System**: BullMQ + Redis untuk background job processing
-- **Lightweight**: Hanya butuh Redis (~20MB RAM) — tanpa Postgres, ChromaDB, atau Ollama
+---
 
-## 📁 Struktur Proyek
+## ✨ Fitur
 
-```
-ponimi-agent/
-├── src/
-│   ├── cli.ts                  # Entrypoint CLI (commander + clack/prompts)
-│   ├── config/
-│   │   └── env.ts              # Validasi environment variables (Zod)
-│   ├── db/
-│   │   └── sqlite.ts           # Checkpointer untuk LangGraph state
-│   ├── agent/
-│   │   ├── state.ts            # Definisi AgentState
-│   │   ├── graph.ts            # Workflow LangGraph (conditional edges)
-│   │   └── nodes/
-│   │       ├── extractRequirements.ts  # Baca Jira & instruksi lokal
-│   │       ├── generateCsv.ts          # Generate CSV Test Cases via LLM
-│   │       ├── generatePlaywright.ts   # Generate Playwright script via LLM
-│   │       ├── executeTest.ts          # Eksekusi di Docker sandbox
-│   │       └── reportResults.ts        # Push ke Github & komentar Jira
-│   └── queue/
-│       ├── worker.ts           # BullMQ worker (background job)
-│       └── publisher.ts        # Masukkan job ke antrian
-├── instructions/
-│   ├── testcases/              # Instruksi kustom untuk generate test cases
-│   └── automation/             # Instruksi kustom untuk generate Playwright script
-├── docs/
-│   └── homelab_plan.md         # Arsitektur & rencana implementasi
-├── docker-compose.yml          # Redis service
-├── package.json
-└── tsconfig.json
-```
+- **Input fleksibel**: URL target + deskripsi bebas, atau ticket ID + file instruksi
+- **Self-healing**: 3x retry dengan regenerasi script jika test gagal
+- **Sandbox execution**: Test dijalankan di Docker container terisolasi
+- **CLI + Webhook**: Pake command line atau HTTP API
+- **Background queue**: BullMQ + Redis — enqueue, check status kapan aja
+- **Real LLM**: DeepSeek (atau OpenAI) buat generate test case + script
+
+---
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Prasyarat
 
-- Node.js v20+ (LTS disarankan)
-- Docker & Docker Compose (untuk Redis dan sandbox)
+- Node.js v20+
+- Docker
+- Redis (bisa pake `docker compose up -d`)
 
-### Instalasi
+### 1. Instalasi
 
 ```bash
 git clone https://github.com/pascalesdedy/ponimi-agent.git
 cd ponimi-agent
+cp .env.example .env
 npm install
+npx tsc
 ```
 
-### Konfigurasi
+### 2. Konfigurasi
 
-Buat file `.env` di root proyek:
+Edit `.env`:
 
 ```env
-# Pilih salah satu (atau lebih) LLM Provider
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+# WAJIB: API Key DeepSeek
+DEEPSEEK_API_KEY=sk-your-key-here
 
-# Redis (default: localhost)
+# Redis (default localhost:6379)
 REDIS_URL=redis://localhost:6379
-
-# Jira (opsional, untuk Mode 3)
-JIRA_API_TOKEN=...
-JIRA_DOMAIN=your-domain.atlassian.net
-
-# Github (opsional, untuk auto-push)
-GITHUB_TOKEN=ghp_...
 ```
 
-### Penggunaan CLI
+### 3. Build Docker Sandbox
 
 ```bash
-# Jalankan agen untuk tiket Jira tertentu (Mode 1/2)
-npm run cli run --ticket QA-123
-
-# Setujui CSV dan lanjutkan eksekusi
-npm run cli approve --thread <THREAD_ID>
-
-# Jalankan background worker untuk mode Autonomous
-npm run cli worker
+docker build -t ponimi-playwright:latest -f docker/Dockerfile.playwright docker/
 ```
+
+### 4. Start Redis
+
+```bash
+docker compose up -d
+```
+
+---
+
+## 🎮 CLI Usage
+
+### Run langsung (foreground)
+
+```bash
+# URL + deskripsi
+node dist/cli.js run -u https://staging.example.com -d "Test login page with Google SSO"
+
+# URL + ticket ID
+node dist/cli.js run -t AUTH-123 -u https://staging.example.com
+
+# Mode khusus (manual / semi / auto)
+node dist/cli.js run -t AUTH-123 -u https://staging.example.com -m auto
+```
+
+### Enqueue background job
+
+```bash
+# Enqueue — worker akan proses di background
+node dist/cli.js enqueue -t AUTH-123 -u https://staging.example.com -d "Test login" -m auto
+```
+
+### Cek status job
+
+```bash
+node dist/cli.js status <JOB_ID>
+```
+
+---
+
+## 🌐 Webhook API
+
+Start server:
+
+```bash
+node dist/scripts/webhook-server.js
+```
+
+Default port **3123**.
+
+| Endpoint | Method | Body | Description |
+|---|---|---|---|
+| `/health` | GET | — | Health check |
+| `/run` | POST | `{ ticketId, url?, description?, mode? }` | Enqueue QA job |
+| `/status/:id` | GET | — | Check job status |
+
+Contoh:
+
+```bash
+curl -X POST http://localhost:3123/run \
+  -H "Content-Type: application/json" \
+  -d '{"ticketId":"LOGIN-TEST","url":"https://staging.example.com","description":"Test login flow","mode":"auto"}'
+```
+
+---
+
+## ⚙️ Production (systemd)
+
+Untuk auto-start worker + webhook di VPS:
+
+```bash
+# Worker
+sudo cp deploy/ponimi-worker.service /etc/systemd/system/
+sudo systemctl enable --now ponimi-worker.service
+
+# Webhook
+sudo cp deploy/ponimi-webhook.service /etc/systemd/system/
+sudo systemctl enable --now ponimi-webhook.service
+```
+
+> Pastiin `DEEPSEEK_API_KEY` ada di environment atau di `/etc/ponimi.env`
+
+---
 
 ## 🏗️ Arsitektur
 
-### Tiga Mode Operasi
+```
+┌──────────┐     ┌──────────────┐     ┌─────────────┐
+│   CLI    │────▶│   Publisher   │────▶│   Redis     │
+│ Webhook  │     │  (BullMQ)    │     │   Queue     │
+└──────────┘     └──────────────┘     └──────┬──────┘
+                                             │
+                                    ┌────────▼────────┐
+                                    │    Worker        │
+                                    │  (BullMQ)        │
+                                    └────────┬────────┘
+                                             │
+                    ┌────────────────────────▼──────────────────┐
+                    │              LangGraph Pipeline            │
+                    │                                            │
+                    │  extractRequirements → generateCsv         │
+                    │         → generatePlaywright → executeTest │
+                    │         → reportResults                    │
+                    │              ↑                 │           │
+                    │              └── self-heal ────┘           │
+                    └────────────────────────────────────────────┘
+                                             │
+                                    ┌────────▼────────┐
+                                    │  Docker Sandbox  │
+                                    │ (Playwright)     │
+                                    └──────────────────┘
+```
 
-| Mode | Deskripsi | Human Intervention |
-|------|-----------|-------------------|
-| **Manual** | User kontrol penuh, pause di setiap tahap | ✅ Review CSV + Script |
-| **Semi-Autonomous** | Pause hanya di CSV review, self-healing aktif | ✅ Review CSV saja |
-| **Full Autonomous** | End-to-end tanpa intervensi, via background worker | ❌ Tidak ada |
+### Output
 
-### Alur LangGraph
+Semua hasil ada di folder `output/`:
 
 ```
-extractRequirements → generateCsv → [PAUSE/Review] → generatePlaywright → executeTest → reportResults
-                                                              ↑                    │
-                                                              └── Self-Healing ────┘
-                                                                  (maks 3x retry)
+output/
+├── <TICKET>.spec.ts          # Playwright test script
+├── <TICKET>-testcases.csv     # Generated test cases
+├── <TICKET>-report.md         # Test execution report
+└── <TICKET>-report.txt        # Plain text report
 ```
 
-## 🐳 Docker
+---
 
-```bash
-# Jalankan Redis
-docker compose up -d
-
-# Jalankan agent
-npm run cli run --ticket QA-123
-```
-
-## 📝 Dokumentasi
-
-- [Homelab Plan](docs/homelab_plan.md) — Arsitektur lengkap dan rencana implementasi
-
-## 📄 License
+## 📝 License
 
 MIT

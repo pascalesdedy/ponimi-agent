@@ -23,3 +23,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Deploy — env files (copy from .example, never commit real secrets)
+deploy/*.env

@@ -1,0 +1,17 @@
+[Unit]
+Description=Ponimi QA Agent — BullMQ Worker
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/ponimi-agent
+ExecStart=/usr/bin/node /opt/ponimi-agent/dist/queue/worker.js
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+TimeoutStopSec=10
+EnvironmentFile=/etc/ponimi.env
+
+[Install]
+WantedBy=multi-user.target
