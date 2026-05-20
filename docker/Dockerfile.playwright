@@ -13,11 +13,6 @@ RUN apk add --no-cache \
 # Install specific Playwright version compatible with Alpine
 RUN npm install -g @playwright/test@1.49.0
 
-# Link system Chromium to Playwright cache location
-RUN mkdir -p /root/.cache/ms-playwright && \
-    PW_CHROMIUM_DIR="$(node -e "const fs=require('fs'); const p='/usr/local/lib/node_modules/@playwright/test/node_modules/playwright-core/browsers.json'; if(!fs.existsSync(p)){throw new Error('playwright-core browsers.json not found');} const j=require(p); const c=(j.browsers||[]).find(b=>b.name==='chromium'); if(!c?.revision){throw new Error('chromium revision missing');} process.stdout.write('chromium-'+c.revision);")" && \
-    ln -s /usr/lib/chromium "/root/.cache/ms-playwright/${PW_CHROMIUM_DIR}"
-
 WORKDIR /workspace
 
 # Install dependencies for module resolution
@@ -26,7 +21,10 @@ RUN npm init -y && npm install @playwright/test@1.49.0
 # Copy built-in config
 COPY docker/playwright.config.cjs /usr/local/share/pw.config.cjs
 COPY docker/run-playwright.sh /usr/local/bin/run-playwright.sh
+COPY docker/link-playwright-chromium.sh /usr/local/bin/link-playwright-chromium.sh
 RUN chmod +x /usr/local/bin/run-playwright.sh
+RUN chmod +x /usr/local/bin/link-playwright-chromium.sh
+RUN /usr/local/bin/link-playwright-chromium.sh
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/usr/local/bin/run-playwright.sh"]
