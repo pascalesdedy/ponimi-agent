@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { AgentState } from "../state";
+import { safeTicketFilename } from "../../security/input";
 
 /**
  * Format execution duration from start/end timestamps.
@@ -23,7 +24,7 @@ function formatDuration(startIso: string | null | undefined, endIso: string | nu
 export const reportResults = async (
   state: AgentState
 ): Promise<Partial<AgentState>> => {
-  const ticketId = state.ticketData || "unknown";
+  const ticketId = safeTicketFilename(state.ticketData || "unknown");
   const outputDir = path.resolve(process.cwd(), "output");
 
   if (!fs.existsSync(outputDir)) {

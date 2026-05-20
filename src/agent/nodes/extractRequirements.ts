@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { AgentState } from "../state";
+import { sanitizePromptText, sanitizeTargetUrl, safeTicketFilename } from "../../security/input";
 
 /**
  * Extract requirements from the ticket ID and local instruction files.
@@ -9,9 +10,9 @@ import { AgentState } from "../state";
 export const extractRequirements = async (
   state: AgentState
 ): Promise<Partial<AgentState>> => {
-  const ticketId = state.ticketData || "UNKNOWN-TICKET";
-  const targetUrl = state.targetUrl || "";
-  const description = state.description || "";
+  const ticketId = safeTicketFilename(state.ticketData || "UNKNOWN-TICKET", "UNKNOWN-TICKET");
+  const targetUrl = sanitizeTargetUrl(state.targetUrl || "");
+  const description = sanitizePromptText(state.description || "", 2000);
 
   // 1. Try to load custom instructions from instructions/ directory
   let customInstructions = "";

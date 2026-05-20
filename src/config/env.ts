@@ -18,7 +18,7 @@ const envSchema = z.object({
   LLM_MODEL: z.string().default('deepseek-chat'),
 
   // Redis (for queue)
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  REDIS_URL: z.string().default('redis://:ponimi-dev-password@localhost:6379'),
 
   // Integrations (optional)
   JIRA_API_TOKEN: z.string().optional(),
@@ -30,6 +30,15 @@ const envSchema = z.object({
 
   // Environment
   MODE: z.enum(['development', 'production']).default('development'),
+
+  // Webhook security
+  WEBHOOK_API_KEY: z.string().default('change-me-webhook-key'),
+  PONIMI_ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
+  WEBHOOK_MAX_BODY_BYTES: z.coerce.number().int().positive().default(65536),
+  WEBHOOK_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(10),
+
+  // Retention
+  CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

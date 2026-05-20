@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { env } from "../config/env";
+import { assertValidTicketId, sanitizePromptText, sanitizeTargetUrl } from "../security/input";
 
 const REDIS_URL = env.REDIS_URL || "redis://localhost:6379";
 const QUEUE_NAME = "ponimi-jobs";
@@ -26,13 +27,16 @@ export async function enqueueJob(
   targetUrl?: string,
   description?: string
 ): Promise<string> {
+  const safeTicket = assertValidTicketId(ticketId);
+  const safeUrl = sanitizeTargetUrl(targetUrl || "");
+  const safeDescription = sanitizePromptText(description || "", 2000);
   const job = await qaQueue.add(
     "qa-run",
     {
-      ticketId,
+      ticketId: safeTicket,
       mode,
-      targetUrl: targetUrl || "",
-      description: description || "",
+      targetUrl: safeUrl,
+      description: safeDescription,
       submittedAt: new Date().toISOString(),
     } satisfies QueuedJob,
     {

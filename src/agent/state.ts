@@ -54,6 +54,12 @@ export const AgentStateAnnotation = Annotation.Root({
     error: string | null;
     status: string;
   }>>(),
+
+  // Context produced from failed execution to guide regeneration
+  healingContext: Annotation<string>(),
+
+  // Result of static safety validation for generated script
+  codeSafe: Annotation<boolean>(),
 });
 
 // Tipe statis untuk kemudahan pengetikan di Node

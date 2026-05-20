@@ -40,11 +40,20 @@ npx tsc
 Edit `.env`:
 
 ```env
-# WAJIB: API Key DeepSeek
+# WAJIB: API Key LLM (pilih salah satu)
 DEEPSEEK_API_KEY=sk-your-key-here
+# OPENAI_API_KEY=...
+# ANTHROPIC_API_KEY=...
+# LLM_PROVIDER=deepseek|openai|anthropic
 
-# Redis (default localhost:6379)
-REDIS_URL=redis://localhost:6379
+# Redis (pakai password)
+REDIS_URL=redis://:ponimi-dev-password@localhost:6379
+
+# Webhook security
+WEBHOOK_API_KEY=change-me-webhook-key
+PONIMI_ALLOWED_ORIGINS=http://localhost:3000
+WEBHOOK_MAX_BODY_BYTES=65536
+WEBHOOK_RATE_LIMIT_PER_MINUTE=10
 ```
 
 ### 3. Build Docker Sandbox
@@ -104,15 +113,16 @@ Default port **3123**.
 | Endpoint | Method | Body | Description |
 |---|---|---|---|
 | `/health` | GET | — | Health check |
-| `/run` | POST | `{ ticketId, url?, description?, mode? }` | Enqueue QA job |
+| `/run` | POST | `{ ticketId, targetUrl?, description?, mode? }` | Enqueue QA job (auth required) |
 | `/status/:id` | GET | — | Check job status |
 
 Contoh:
 
 ```bash
 curl -X POST http://localhost:3123/run \
+  -H "X-Ponimi-Key: change-me-webhook-key" \
   -H "Content-Type: application/json" \
-  -d '{"ticketId":"LOGIN-TEST","url":"https://staging.example.com","description":"Test login flow","mode":"auto"}'
+  -d '{"ticketId":"LOGIN-TEST","targetUrl":"https://staging.example.com","description":"Test login flow","mode":"auto"}'
 ```
 
 ---
@@ -152,8 +162,9 @@ sudo systemctl enable --now ponimi-webhook.service
                     │              LangGraph Pipeline            │
                     │                                            │
                     │  extractRequirements → generateCsv         │
-                    │         → generatePlaywright → executeTest │
-                    │         → reportResults                    │
+                    │         → generatePlaywright               │
+                    │         → validateGeneratedCode            │
+                    │         → executeTest → reportResults      │
                     │              ↑                 │           │
                     │              └── self-heal ────┘           │
                     └────────────────────────────────────────────┘
