@@ -3,6 +3,9 @@ import { env } from "../config/env";
 import { autoApp, app } from "../agent/graph";
 import fs from "fs";
 import path from "path";
+import { generateThreadId } from "../security/input";
+import { sanitizeErrorMessage } from "../security/error";
+import { logger } from "../logging/logger";
 
 const REDIS_URL = env.REDIS_URL || "redis://localhost:6379";
 const QUEUE_NAME = "ponimi-jobs";
@@ -23,7 +26,7 @@ interface QueuedJob {
  */
 async function processRun(job: Job<QueuedJob>): Promise<Record<string, unknown>> {
   const { ticketId, mode, targetUrl, description } = job.data;
-  const threadId = `thread-${ticketId}`;
+  const threadId = generateThreadId(ticketId);
   const config = { configurable: { thread_id: threadId } };
 
   // Ensure output directory exists
@@ -53,6 +56,8 @@ async function processRun(job: Job<QueuedJob>): Promise<Record<string, unknown>>
       error: string | null;
       status: string;
     }>,
+    healingContext: "",
+    codeSafe: true,
   };
 
   await job.updateProgress(10);
@@ -149,16 +154,20 @@ export function createWorker(concurrency: number = 1): Worker {
   });
 
   worker.on("completed", (job) => {
-    console.log(`✅ Job ${job.id} completed: ${job.data.ticketId}`);
+    logger.info("job completed", { jobId: job.id, ticketId: job.data.ticketId });
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`❌ Job ${job?.id} failed: ${job?.data?.ticketId} — ${err.message}`);
+    logger.error("job failed", {
+      jobId: job?.id,
+      ticketId: job?.data?.ticketId,
+      error: sanitizeErrorMessage(err),
+    });
   });
 
   worker.on("error", (err) => {
     // BullMQ will emit this on connection issues etc.
-    console.error(`🔥 Worker error: ${err.message}`);
+    logger.error("worker error", { error: sanitizeErrorMessage(err) });
   });
 
   return worker;
@@ -168,18 +177,20 @@ export function createWorker(concurrency: number = 1): Worker {
 const isDirectRun = require.main === module;
 if (isDirectRun) {
   const worker = createWorker(1);
-  console.log(`👷 Ponimi Worker — ${worker.opts.concurrency || 1} concurrent slot(s)`);
-  console.log(`  Queue: ${QUEUE_NAME} @ ${REDIS_URL}`);
-  console.log(`  Press Ctrl+C to stop gracefully.`);
+  logger.info("worker started", {
+    concurrency: worker.opts.concurrency || 1,
+    queue: QUEUE_NAME,
+    redisUrl: REDIS_URL,
+  });
 
   process.on("SIGINT", async () => {
-    console.log("\n⏹️  Shutting down gracefully...");
+    logger.info("worker shutting down (SIGINT)");
     await worker.close();
     process.exit(0);
   });
 
   process.on("SIGTERM", async () => {
-    console.log("\n⏹️  Shutting down gracefully...");
+    logger.info("worker shutting down (SIGTERM)");
     await worker.close();
     process.exit(0);
   });

@@ -2,11 +2,10 @@
 
 import { Command } from "commander";
 import { intro, outro, spinner } from "@clack/prompts";
-import { app, autoApp } from "./agent/graph";
 import { env } from "./config/env";
 import pc from "picocolors";
-import fs from "fs";
-import path from "path";
+import { assertValidTicketId, generateThreadId, sanitizePromptText, sanitizeTargetUrl } from "./security/input";
+import { sanitizeErrorMessage } from "./security/error";
 
 const program = new Command();
 
@@ -30,7 +29,9 @@ program
   .action(async (options) => {
     intro(`${pc.cyan("🦄 Ponimi QA Agent")}`);
 
-    const ticket = options.ticket || `TICKET-${Date.now()}`;
+    const ticket = assertValidTicketId(options.ticket || `TICKET-${Date.now()}`);
+    const targetUrl = sanitizeTargetUrl(options.url || "");
+    const description = sanitizePromptText(options.desc || "", 2000);
     let mode: "manual" | "semi-autonomous" | "autonomous" = "manual";
     if (options.mode === "auto") mode = "autonomous";
     else if (options.mode === "semi") mode = "semi-autonomous";
@@ -39,7 +40,7 @@ program
       console.log(pc.yellow("⚠️  No API key configured. Running in mock mode.\n"));
     }
 
-    const threadId = `thread-${ticket}`;
+    const threadId = generateThreadId(ticket);
     const config = {
       configurable: { thread_id: threadId },
     };
@@ -49,8 +50,8 @@ program
 
     const initialState = {
       ticketData: ticket,
-      targetUrl: options.url || "",
-      description: options.desc || "",
+      targetUrl,
+      description,
       mode,
       retryCount: 0,
       currentStep: "🚀 Starting...",
@@ -60,9 +61,12 @@ program
       executionError: null as string | null,
       executionStatus: "not_run",
       selfHealDisabled: false,
+      healingContext: "",
+      codeSafe: true,
     };
 
     try {
+      const { app, autoApp } = await import("./agent/graph");
       // Auto mode: use autoApp (no interrupt), single stream
       // Manual/semi mode: use app (with interrupt), single stream + loop for resume
       const activeApp = mode === "autonomous" ? autoApp : app;
@@ -129,12 +133,13 @@ program
       } else {
         outro(
           `${modeLabel} mode — CSV generated.\n` +
+          `  🧵 ${pc.dim("Thread ID:     ")} ${pc.cyan(threadId)}\n` +
           `  📄 ${pc.dim("Review CSV:     ")} ${pc.cyan("cat output/" + ticket + "-testcases.csv")}\n` +
           `  ▶ ${pc.dim("Approve/resume: ")} ${pc.green("ponimi resume -t " + threadId)}`
         );
       }
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
+      const errMsg = sanitizeErrorMessage(error);
       s.stop(pc.red(`❌ Error: ${errMsg}`));
       outro(pc.red("Run failed."));
       process.exit(1);
@@ -159,6 +164,7 @@ program
     s.start("Resuming execution...");
 
     try {
+      const { app } = await import("./agent/graph");
       const config = {
         configurable: { thread_id: threadId },
       };
@@ -188,7 +194,7 @@ program
 
       outro("All steps complete!");
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
+      const errMsg = sanitizeErrorMessage(error);
       s.stop(pc.red(`❌ Error: ${errMsg}`));
       process.exit(1);
     }
@@ -203,18 +209,20 @@ program
   .option("-d, --desc <text>", "Test description")
   .option("-m, --mode <mode>", "Mode: manual | semi | auto", "auto")
   .action(async (options) => {
-    const ticket = options.ticket || `TICKET-${Date.now()}`;
+    const ticket = assertValidTicketId(options.ticket || `TICKET-${Date.now()}`);
+    const targetUrl = sanitizeTargetUrl(options.url || "");
+    const description = sanitizePromptText(options.desc || "", 2000);
     let mode: "manual" | "semi-autonomous" | "autonomous" = "autonomous";
     if (options.mode === "semi") mode = "semi-autonomous";
     else if (options.mode === "manual") mode = "manual";
 
     const { enqueueJob } = await import("./queue/publisher");
-    const jobId = await enqueueJob(ticket, mode, options.url, options.desc);
+    const jobId = await enqueueJob(ticket, mode, targetUrl, description);
 
     console.log(`\n${pc.green("✅ Job queued!")}`);
     console.log(`  ${pc.cyan("Ticket:")} ${ticket}`);
-    if (options.url) console.log(`  ${pc.cyan("URL:")} ${options.url}`);
-    if (options.desc) console.log(`  ${pc.cyan("Desc:")} ${options.desc}`);
+    if (targetUrl) console.log(`  ${pc.cyan("URL:")} ${targetUrl}`);
+    if (description) console.log(`  ${pc.cyan("Desc:")} ${description}`);
     console.log(`  ${pc.cyan("Mode:")} ${options.mode}`);
     console.log(`  ${pc.cyan("Job ID:")} ${jobId}`);
     console.log(`\n  ${pc.dim("Check status:")} ${pc.green("ponimi status " + jobId)}`);
@@ -266,7 +274,7 @@ program
     const concurrency = parseInt(options.concurrency, 10) || 1;
 
     console.log(pc.cyan(`👷 Ponimi Worker — ${concurrency} concurrent slot(s)`));
-    console.log(pc.dim(`  Queue: ponimi-jobs @ redis://localhost:6379`));
+    console.log(pc.dim(`  Queue: ponimi-jobs @ ${env.REDIS_URL}`));
     console.log(pc.dim("  Press Ctrl+C to stop gracefully.\n"));
 
     const { createWorker } = await import("./queue/worker");

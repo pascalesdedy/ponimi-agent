@@ -6,6 +6,7 @@ import {
   runInSandbox,
   getBestExecutor,
 } from "../../sandbox/docker";
+import { safeTicketFilename } from "../../security/input";
 
 /** Maximum self-healing attempts */
 const MAX_RETRIES = 3;
@@ -14,17 +15,19 @@ const MAX_RETRIES = 3;
  * Parse error from test execution into structured parts.
  * Used by self-healing logic to understand what went wrong.
  */
-function parseTestError(errMsg: string): {
+interface ParsedTestError {
   category: string;
   rootCause: string;
   selector?: string;
   element?: string;
   line?: number;
-} {
+}
+
+function parseTestError(errMsg: string): ParsedTestError {
   const result = {
     category: "unknown",
     rootCause: errMsg.substring(0, 200),
-  } as any;
+  } as ParsedTestError;
 
   // Common Playwright error patterns
   if (errMsg.includes("locator") && errMsg.includes("not found")) {
@@ -119,7 +122,7 @@ export const executeTest = async (
     };
   }
 
-  const ticketId = state.ticketData || "unknown";
+  const ticketId = safeTicketFilename(state.ticketData || "unknown");
   const outputDir = path.resolve(process.cwd(), "output");
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -229,7 +232,7 @@ export const executeTest = async (
       attemptHistory: [...(state.attemptHistory || []), attemptEntry],
       currentStep: `🔄 Test failed via ${attemptLabel} (attempt ${retryCount}/${MAX_RETRIES}). ${healingHint}`,
       // Store healing context for the regenerate step
-      instructions: healingHint,
+      healingContext: healingHint,
       selfHealDisabled: false, // can still try
     };
   }

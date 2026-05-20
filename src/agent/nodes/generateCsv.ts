@@ -28,7 +28,7 @@ export const generateCsv = async (
   const spec = state.instructions || "No specification provided.";
 
   // Use mock data if env says so or no API key configured
-  const noApiKey = !env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY;
+  const noApiKey = !env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY;
   if (env.LLM_MOCK || noApiKey) {
     const csvContent = generateMockCsv(state.ticketData || "TICKET");
     return {

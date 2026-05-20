@@ -1,6 +1,8 @@
-import { execSync, spawn } from "child_process";
+import { exec, execSync, spawn } from "child_process";
+import { promisify } from "util";
 import path from "path";
 import fs from "fs";
+const execAsync = promisify(exec);
 
 export interface SandboxResult {
   stdout: string;
@@ -55,12 +57,12 @@ export async function buildSandboxImage(): Promise<string> {
     throw new Error(`Dockerfile not found: ${dockerfile}`);
   }
 
-  const output = execSync(
+  const { stdout, stderr } = await execAsync(
     `docker build -f ${dockerfile} -t ponimi-playwright:latest --rm ${path.resolve(process.cwd())}`,
-    { encoding: "utf-8", timeout: 300000 } // 5 min timeout for build
+    { timeout: 300000, maxBuffer: 1024 * 1024 * 10 }
   );
 
-  return output;
+  return `${stdout}\n${stderr}`;
 }
 
 /**
@@ -92,7 +94,7 @@ export async function runInSandbox(
       [
         "run",
         "--rm",
-        "--network", "host",
+        "--network", "bridge",
         "--memory", "256m",
         "--memory-swap", "384m",
         "--cpus", "1",

@@ -4,6 +4,7 @@ import { AgentStateAnnotation, AgentState } from "./state";
 import { extractRequirements } from "./nodes/extractRequirements";
 import { generateCsv } from "./nodes/generateCsv";
 import { generatePlaywright } from "./nodes/generatePlaywright";
+import { validateGeneratedCode } from "./nodes/validateGeneratedCode";
 import { executeTest } from "./nodes/executeTest";
 import { reportResults } from "./nodes/reportResults";
 import { checkpointer } from "../db/sqlite";
@@ -39,7 +40,7 @@ function executorAvailable(): boolean {
  * - Semi-autonomous: pause for CSV review
  * - Autonomous: skip directly to Playwright generation
  */
-const routeAfterCsv = (state: AgentState): string => {
+export const routeAfterCsv = (state: AgentState): string => {
   if (state.mode === "autonomous") {
     return "generatePlaywright";
   }
@@ -52,8 +53,15 @@ const routeAfterCsv = (state: AgentState): string => {
  * - Manual mode: stop (user just wants the script)
  * - Semi / Auto: execute the test
  */
-const routeAfterPlaywright = (state: AgentState): string => {
+export const routeAfterPlaywright = (state: AgentState): string => {
   if (state.mode === "manual") {
+    return "reportResults";
+  }
+  return "validateGeneratedCode";
+};
+
+export const routeAfterValidation = (state: AgentState): string => {
+  if (state.codeSafe === false) {
     return "reportResults";
   }
   return "executeTest";
@@ -66,7 +74,7 @@ const routeAfterPlaywright = (state: AgentState): string => {
  * - 'failed' + can retry + executor available → regenerate (self-heal)
  * - 'failed' + no executor → report results (skip self-heal)
  */
-const routeAfterExecution = (state: AgentState): string => {
+export const routeAfterExecution = (state: AgentState): string => {
   const status = state.executionStatus;
 
   // Passed/skipped → always report
@@ -99,6 +107,7 @@ const workflow = new StateGraph(AgentStateAnnotation)
   .addNode("extractRequirements", extractRequirements)
   .addNode("generateCsv", generateCsv)
   .addNode("generatePlaywright", generatePlaywright)
+  .addNode("validateGeneratedCode", validateGeneratedCode)
   .addNode("executeTest", executeTest)
   .addNode("reportResults", reportResults)
 
@@ -112,6 +121,13 @@ const workflow = new StateGraph(AgentStateAnnotation)
 
   // Flow: generate Playwright → [manual: end | semi/auto: execute]
   .addConditionalEdges("generatePlaywright", routeAfterPlaywright, {
+    validateGeneratedCode: "validateGeneratedCode",
+    executeTest: "executeTest",
+    reportResults: "reportResults",
+    __end__: END,
+  })
+
+  .addConditionalEdges("validateGeneratedCode", routeAfterValidation, {
     executeTest: "executeTest",
     reportResults: "reportResults",
     __end__: END,

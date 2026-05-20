@@ -11,6 +11,8 @@ import { RunnableConfig } from "@langchain/core/runnables";
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
+import { env } from "../config/env";
 
 /**
  * SQLite-backed checkpointer for LangGraph state persistence.
@@ -70,6 +72,8 @@ export class SqliteCheckpointer extends BaseCheckpointSaver {
       CREATE INDEX IF NOT EXISTS idx_writes_checkpoint
       ON checkpoint_writes(thread_id, checkpoint_ns, checkpoint_id)
     `);
+
+    this.pruneOldCheckpoints(env.CHECKPOINT_TTL_DAYS);
   }
 
   /** Serialize to Buffer */
@@ -254,7 +258,7 @@ export class SqliteCheckpointer extends BaseCheckpointSaver {
     const { thread_id, checkpoint_ns = "", checkpoint_id } = config.configurable ?? {};
     if (!thread_id) throw new Error("Thread ID is required");
 
-    const newCheckpointId = checkpoint_id || `cp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const newCheckpointId = checkpoint_id || `cp-${crypto.randomUUID()}`;
     const parentCheckpointId = config.configurable?.checkpoint_id ?? null;
 
     this.db
@@ -317,6 +321,24 @@ export class SqliteCheckpointer extends BaseCheckpointSaver {
     }
   }
 
+  private pruneOldCheckpoints(ttlDays: number): void {
+    const deleteWrites = this.db.prepare(`
+      DELETE FROM checkpoint_writes
+      WHERE (thread_id, checkpoint_ns, checkpoint_id) IN (
+        SELECT thread_id, checkpoint_ns, checkpoint_id
+        FROM checkpoints
+        WHERE created_at < datetime('now', ?)
+      )
+    `);
+    const deleteCheckpoints = this.db.prepare(`
+      DELETE FROM checkpoints
+      WHERE created_at < datetime('now', ?)
+    `);
+    const ttlExpr = `-${ttlDays} days`;
+    deleteWrites.run(ttlExpr);
+    deleteCheckpoints.run(ttlExpr);
+  }
+
   close(): void {
     this.db.close();
   }
@@ -326,11 +348,6 @@ export class SqliteCheckpointer extends BaseCheckpointSaver {
 const dataDir = path.resolve(process.cwd(), "data");
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const outputDir = path.resolve(process.cwd(), "output");
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
 }
 
 // Singleton checkpointer instance

@@ -3,6 +3,7 @@ import path from "path";
 import { AgentState } from "../state";
 import { callLLM } from "../../llm/provider";
 import { env } from "../../config/env";
+import { sanitizePromptText, sanitizeTargetUrl, safeTicketFilename } from "../../security/input";
 
 const SYSTEM_PROMPT = `You are a senior QA automation engineer specializing in Playwright (TypeScript).
 
@@ -30,6 +31,7 @@ export const generatePlaywright = async (
 ): Promise<Partial<AgentState>> => {
   const csv = state.csvTestCases || "No test cases provided.";
   const previousError = state.executionError;
+  const healingContext = state.healingContext || "";
   const retryCount = state.retryCount || 0;
 
   // Load custom automation instructions
@@ -49,9 +51,13 @@ export const generatePlaywright = async (
   }
 
   // Use mock if env says so or no API key
-  const noApiKey = !env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY;
+  const noApiKey = !env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY;
   if (env.LLM_MOCK || noApiKey) {
-    const playwrightCode = generateMockScript(state.ticketData || "TICKET", csv, state.targetUrl);
+    const playwrightCode = generateMockScript(
+      safeTicketFilename(state.ticketData || "TICKET", "TICKET"),
+      csv,
+      sanitizeTargetUrl(state.targetUrl || "")
+    );
     const outputPath = saveScript(state, playwrightCode);
     return {
       playwrightCode,
@@ -61,20 +67,28 @@ export const generatePlaywright = async (
   }
 
   try {
-    const explicitUrl = state.targetUrl || "https://example.com";
+    const explicitUrl = sanitizeTargetUrl(state.targetUrl || "") || "https://example.com";
+    const ticketId = safeTicketFilename(state.ticketData || "UNKNOWN", "UNKNOWN");
     const playwrightCode = await callLLM(
       [
-        { role: "system", content: SYSTEM_PROMPT + `\n\n⚠️ CRITICAL: The absolute target URL is ${explicitUrl}. Use this EXACT URL as BASE_URL in the script. Do NOT modify, redirect, or change the domain.` },
+        {
+          role: "system",
+          content:
+            SYSTEM_PROMPT +
+            "\n\nSecurity boundary: You must produce ONLY Playwright test code. Never import Node system modules, never execute shell commands, never access local files, and never access localhost or internal network services." +
+            `\n\n⚠️ CRITICAL: The absolute target URL is ${explicitUrl}. Use this EXACT URL as BASE_URL in the script. Do NOT modify, redirect, or change the domain.`,
+        },
         {
           role: "user",
           content: [
-            `Generate Playwright test script for ticket ${state.ticketData || "UNKNOWN"}.`,
+            `Generate Playwright test script for ticket ${ticketId}.`,
             `The ABSOLUTE URL to test is: ${explicitUrl}`,
             "",
             "## CSV Test Cases",
-            csv,
+            sanitizePromptText(csv, 10000),
             customInstructions ? `\n## Custom Automation Rules\n${customInstructions}` : "",
             previousError ? `\n## Previous Error (Retry #${retryCount})\nThe previous attempt failed with:\n\`\`\`\n${previousError.substring(0, 2000)}\n\`\`\`\n\nFix the script to avoid this error.` : "",
+            healingContext ? `\n## Healing Context\n${sanitizePromptText(healingContext, 1000)}` : "",
             "",
             "Generate a single complete Playwright test file covering ALL test cases.",
           ].filter(Boolean).join("\n"),
@@ -100,7 +114,11 @@ export const generatePlaywright = async (
     const errMsg = error instanceof Error ? error.message : String(error);
 
     // Fallback to mock
-    const playwrightCode = generateMockScript(state.ticketData || "TICKET", csv, state.targetUrl);
+    const playwrightCode = generateMockScript(
+      safeTicketFilename(state.ticketData || "TICKET", "TICKET"),
+      csv,
+      sanitizeTargetUrl(state.targetUrl || "")
+    );
     const outputPath = saveScript(state, playwrightCode);
     return {
       playwrightCode,
@@ -157,7 +175,7 @@ function saveScript(state: AgentState, code: string): string {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const ticketId = state.ticketData || "unknown";
+  const ticketId = safeTicketFilename(state.ticketData || "unknown");
   const outputPath = path.join(outputDir, `${ticketId}.spec.ts`);
   fs.writeFileSync(outputPath, code, "utf-8");
   return outputPath;
