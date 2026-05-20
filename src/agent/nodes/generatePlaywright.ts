@@ -61,13 +61,15 @@ export const generatePlaywright = async (
   }
 
   try {
+    const explicitUrl = state.targetUrl || "https://example.com";
     const playwrightCode = await callLLM(
       [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: SYSTEM_PROMPT + `\n\n⚠️ CRITICAL: The absolute target URL is ${explicitUrl}. Use this EXACT URL as BASE_URL in the script. Do NOT modify, redirect, or change the domain.` },
         {
           role: "user",
           content: [
             `Generate Playwright test script for ticket ${state.ticketData || "UNKNOWN"}.`,
+            `The ABSOLUTE URL to test is: ${explicitUrl}`,
             "",
             "## CSV Test Cases",
             csv,
@@ -81,9 +83,16 @@ export const generatePlaywright = async (
       { temperature: 0.2 }
     );
 
-    const outputPath = saveScript(state, playwrightCode);
+    // Force the EXACT URL into the script (LLM may hallucinate different domains)
+    const urlForce = state.targetUrl ? state.targetUrl.replace(/\/+$/, "") : "https://example.com";
+    const finalCode = playwrightCode
+      .replace(/const BASE_URL\s*=\s*[^;]+;/g, `const BASE_URL = '${urlForce}';`)
+      .replace(/BASE_URL\s*\|\|\s*'[^']+'/g, `'${urlForce}'`)
+      .replace(/page\.goto\(BASE_URL\)/g, `page.goto('${urlForce}')`);
+
+    const outputPath = saveScript(state, finalCode);
     return {
-      playwrightCode,
+      playwrightCode: finalCode,
       executionStatus: "script_generated",
       currentStep: `✅ Playwright script saved: ${outputPath}`,
     };
