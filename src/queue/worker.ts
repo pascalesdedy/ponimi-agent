@@ -163,3 +163,24 @@ export function createWorker(concurrency: number = 1): Worker {
 
   return worker;
 }
+
+// ── Self-invoke when run directly ──────────────────────────────────────────
+const isDirectRun = require.main === module;
+if (isDirectRun) {
+  const worker = createWorker(1);
+  console.log(`👷 Ponimi Worker — ${worker.opts.concurrency || 1} concurrent slot(s)`);
+  console.log(`  Queue: ${QUEUE_NAME} @ ${REDIS_URL}`);
+  console.log(`  Press Ctrl+C to stop gracefully.`);
+
+  process.on("SIGINT", async () => {
+    console.log("\n⏹️  Shutting down gracefully...");
+    await worker.close();
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", async () => {
+    console.log("\n⏹️  Shutting down gracefully...");
+    await worker.close();
+    process.exit(0);
+  });
+}
