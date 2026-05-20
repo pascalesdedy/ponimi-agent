@@ -6,6 +6,7 @@ import { env } from "./config/env";
 import pc from "picocolors";
 import { assertValidTicketId, generateThreadId, sanitizePromptText, sanitizeTargetUrl } from "./security/input";
 import { sanitizeErrorMessage } from "./security/error";
+import { resolveAgentMode } from "./security/mode";
 
 const program = new Command();
 
@@ -32,9 +33,7 @@ program
     const ticket = assertValidTicketId(options.ticket || `TICKET-${Date.now()}`);
     const targetUrl = sanitizeTargetUrl(options.url || "");
     const description = sanitizePromptText(options.desc || "", 2000);
-    let mode: "manual" | "semi-autonomous" | "autonomous" = "manual";
-    if (options.mode === "auto") mode = "autonomous";
-    else if (options.mode === "semi") mode = "semi-autonomous";
+    const mode = resolveAgentMode(options.mode, "manual");
 
     if (!env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY) {
       console.log(pc.yellow("⚠️  No API key configured. Running in mock mode.\n"));
@@ -154,8 +153,7 @@ program
   .option("-m, --mode <mode>", "Override mode: manual | semi", "manual")
   .action(async (options) => {
     const threadId = options.thread || `thread-TICKET-${Date.now()}`;
-    let mode: "manual" | "semi-autonomous" | "autonomous" = "manual";
-    if (options.mode === "semi") mode = "semi-autonomous";
+    const mode = resolveAgentMode(options.mode, "manual");
 
     // Extract ticket from thread ID
     const ticket = threadId.replace("thread-", "");
@@ -212,9 +210,7 @@ program
     const ticket = assertValidTicketId(options.ticket || `TICKET-${Date.now()}`);
     const targetUrl = sanitizeTargetUrl(options.url || "");
     const description = sanitizePromptText(options.desc || "", 2000);
-    let mode: "manual" | "semi-autonomous" | "autonomous" = "autonomous";
-    if (options.mode === "semi") mode = "semi-autonomous";
-    else if (options.mode === "manual") mode = "manual";
+    const mode = resolveAgentMode(options.mode, "autonomous");
 
     const { enqueueJob } = await import("./queue/publisher");
     const jobId = await enqueueJob(ticket, mode, targetUrl, description);

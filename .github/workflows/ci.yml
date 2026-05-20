@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -29,4 +32,3 @@ jobs:
 
       - name: Build Docker Playwright image
         run: docker build -t ponimi-playwright:ci -f docker/Dockerfile.playwright .
-

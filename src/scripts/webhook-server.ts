@@ -19,6 +19,7 @@ import { assertValidTicketId, sanitizePromptText, sanitizeTargetUrl } from "../s
 import { sanitizeErrorMessage } from "../security/error";
 import Redis from "ioredis";
 import { logger } from "../logging/logger";
+import { resolveAgentMode } from "../security/mode";
 
 const PORT = parseInt(process.env.PONIMI_PORT || "3123", 10);
 const HOST = process.env.PONIMI_HOST || "127.0.0.1";
@@ -166,12 +167,7 @@ const server = http.createServer(async (req, res) => {
       const payload = runPayloadSchema.parse(JSON.parse(body));
 
       const ticketId = assertValidTicketId(payload.ticketId);
-      const mode = payload.mode || "auto";
-      const validModes = ["manual", "semi-autonomous", "autonomous"] as const;
-      const resolvedMode = mode === "semi" ? "semi-autonomous"
-        : mode === "auto" ? "autonomous"
-          : validModes.includes(mode as typeof validModes[number]) ? mode as typeof validModes[number]
-            : "autonomous";
+      const resolvedMode = resolveAgentMode(payload.mode, "autonomous");
 
       const jobId = await enqueueJob(
         ticketId,
@@ -241,4 +237,3 @@ server.listen(PORT, HOST, () => {
     endpoints: ["/run", "/status/:id", "/health"],
   });
 });
-
